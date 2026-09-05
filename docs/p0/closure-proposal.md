@@ -2,7 +2,7 @@
 
 提案版本：`P0-CLOSURE-PROPOSAL-20260906-v1`
 
-当前代码 HEAD：`3a5b466`（P0-08 benchmark determinism fix）。本文件是 Harness `harness-update` 的只读提案，不是授权，也不把 P0 标为完成。
+质量证据绑定的源码 HEAD：`3a5b466`（P0-08 benchmark determinism fix）；之后的 `f203ac3` 只更新本提案。本文件是 Harness `harness-update` 的只读提案，不是授权，也不把 P0 标为完成。
 
 ## 已确认事实
 
