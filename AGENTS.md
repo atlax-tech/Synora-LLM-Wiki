@@ -7,7 +7,7 @@ P0 正在执行，当前出口为 `CHANGES_REQUIRED`；P1–P9 未启动。已�
 
 ## 必读与按需读取
 
-每次先读本文件、[PLAN](docs/PLAN.md) 的目标阶段和最近 [开发日志](docs/development-log/)，再按改动范围读下表。首次接手读 PRODUCT 与 ARCHITECTURE；禁止每次全量加载档案。
+工程任务先读本文件，再定位 [PLAN](docs/PLAN.md) 的目标阶段和最近相关 [开发日志](docs/development-log/)；按下表读取任务所需正文。首次接手产品工程读 PRODUCT 与 ARCHITECTURE；纯规则维护只读受影响合同。禁止默认全量加载档案。
 
 | 权威文件 | 唯一职责／何时读取 |
 |---|---|
@@ -27,27 +27,24 @@ P0 正在执行，当前出口为 `CHANGES_REQUIRED`；P1–P9 未启动。已�
 
 ## 必须使用的 Skills
 
-每次工程任务先调用已安装的 `ponytail:ponytail`（默认 full）并全程执行。先理解全链路，再依次复用现有实现、标准库、Apple 原生能力、已安装依赖，最后新增必要代码。
+每次工程任务先调用已安装的 `ponytail:ponytail`（默认 full）并全程执行。实现策略按该 Skill 执行。
 
 Ponytail 只减少无价值的实现复杂度，不能砍需求、降低验收、以 MVP/mock/占位替代真实交付，也不能省略安全、数据恢复、可访问性或明确要求的测试。与上述约束冲突的精简建议不适用。修复定位根因并查调用方；不做无关重构。只有用户明确停用才停用。
 
 工程治理使用本机安装的 Harness Armor：初始化调用 `harness-build`，后续治理变更调用 `harness-update`，只读检查调用 `harness-check`。不得在 Harness-only 任务里编写业务代码。
 
-## 开发日志编写规范
-开发日志编写规范遵守 [development-log/README.md](docs/development-log/README.md)。
+开发日志遵守 [编写规范](docs/development-log/README.md)。
 
 ## 边界与证据
 
-- 从问题、约束和事实推理；不默认附和用户。结论区分 CONFIRMED、INFERRED、UNRESOLVED、CONFLICTED，并给来源；要求已确认不等于实现已通过。
-- 先声明文件范围与验证方法，保护 user/observed 文件；发现未授权内容或不确定问题停止相关工作讨论。
+- 结论区分 CONFIRMED、INFERRED、UNRESOLVED、CONFLICTED，并给来源；要求已确认不等于实现已通过。
+- 先声明文件范围与验证方法，保护 user/observed 文件；发现未授权内容、归属冲突或不确定问题，只暂停受影响部分讨论；继续独立工作，不接管或覆盖其他任务内容。
 - 只执行获准阶段；初始化不自动启动 P0，不创建空业务模块、Xcode 工程或产品 mock。
 - 当前在 main 工作，发布后的分支规则见 DEVELOPMENT。不擅自发布、推送或保护分支。
 - `local-reference/` 是 Git 忽略的本地原型与素材，不可 force-add 或上传；其嵌套 AGENTS 只约束原型目录。缺参考不能声称像素验收通过。
 - 根 README 保持空白，直到用户另行授权。
 - 任务完成需真实测试证据；执行、独立测试、独立评审不得合并为自证。仅检查文档不能宣称产品功能 PASS。
 - `.agents/` 与 `.harness/` 仅是本机工具/状态目录，必须由 Git 忽略，不得 force-add 或作为仓库文档依赖。持久工程事实只写入 AGENTS 与 `docs/`。
-- code style 严格遵守 clean code 规范
-- git 遵守小步提交规范，每个提交只完成一个功能点
-- 阶段任务提交后在阶段结束时统一推送到github仓库
+- 代码遵守 clean code；Git 小步提交，每次只完成一个功能点。阶段任务在阶段结束时统一推送 GitHub；其他推送须另有授权。
 
 治理检查命令见 [DEVELOPMENT](docs/DEVELOPMENT.md)；P0 自动 build/test 证据见 [P0 日志](docs/development-log/2026-09-06-p0.md)，未运行场景不得声称验证。
