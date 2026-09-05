@@ -38,3 +38,37 @@ func smokeAssetHasAReadableTIFFHeader() throws {
   #expect(CGImageSourceGetCount(source!) == 1)
   #expect(manifest.logicalAssetBytes == 1024 * 1024)
 }
+
+@Test
+func verifyRejectsTamperedManifestShapeAndPhysicalBytes() throws {
+  let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  defer { try? FileManager.default.removeItem(at: root) }
+  let generator = BenchmarkGenerator()
+  let manifest = try generator.generate(profile: .smoke, output: root)
+
+  let missingFileManifest = BenchmarkManifest(
+    profile: manifest.profile,
+    seed: manifest.seed,
+    records: manifest.records,
+    blocks: manifest.blocks,
+    logicalAssetBytes: manifest.logicalAssetBytes,
+    physicalBytes: manifest.physicalBytes,
+    files: ["records.jsonl": manifest.files["records.jsonl"]!]
+  )
+  #expect(throws: BenchmarkError.mismatch("manifest file set does not match profile")) {
+    try generator.verify(missingFileManifest, in: root)
+  }
+
+  let wrongSizeManifest = BenchmarkManifest(
+    profile: manifest.profile,
+    seed: manifest.seed,
+    records: manifest.records,
+    blocks: manifest.blocks,
+    logicalAssetBytes: manifest.logicalAssetBytes,
+    physicalBytes: manifest.physicalBytes + 1,
+    files: manifest.files
+  )
+  #expect(throws: BenchmarkError.mismatch("manifest physical bytes do not match files")) {
+    try generator.verify(wrongSizeManifest, in: root)
+  }
+}

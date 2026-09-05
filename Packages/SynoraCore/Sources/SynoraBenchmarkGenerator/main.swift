@@ -27,7 +27,9 @@ do {
     output: URL(fileURLWithPath: outputPath, isDirectory: true),
     resume: resume
   )
-  let data = try JSONEncoder().encode(manifest)
+  let encoder = JSONEncoder()
+  encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+  let data = try encoder.encode(manifest)
   FileHandle.standardOutput.write(data)
   FileHandle.standardOutput.write(Data([0x0A]))
 } catch {

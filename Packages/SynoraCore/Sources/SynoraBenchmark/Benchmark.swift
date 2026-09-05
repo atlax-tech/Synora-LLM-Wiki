@@ -121,10 +121,22 @@ public struct BenchmarkGenerator: Sendable {
   }
 
   public func verify(_ manifest: BenchmarkManifest, in output: URL) throws {
+    guard manifest.schemaVersion == 1 else {
+      throw BenchmarkError.mismatch("unsupported benchmark manifest schema")
+    }
     guard manifest.records == manifest.profile.recordCount,
       manifest.blocks == manifest.profile.blockCount,
       manifest.logicalAssetBytes == manifest.profile.assetBytes
     else { throw BenchmarkError.mismatch("manifest counts do not match profile") }
+
+    let expectedPaths: Set<String> = [
+      "records.jsonl", "blocks.jsonl", "assets/payload.tiff",
+    ]
+    guard Set(manifest.files.keys) == expectedPaths else {
+      throw BenchmarkError.mismatch("manifest file set does not match profile")
+    }
+
+    var physicalBytes: Int64 = 0
     for (path, expectedHash) in manifest.files {
       let file = output.appendingPathComponent(path)
       guard FileManager.default.fileExists(atPath: file.path) else {
@@ -133,6 +145,14 @@ public struct BenchmarkGenerator: Sendable {
       guard try sha256(file) == expectedHash else {
         throw BenchmarkError.mismatch("checksum mismatch: \(path)")
       }
+      let size = try FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber
+      guard let size else {
+        throw BenchmarkError.mismatch("missing file size: \(path)")
+      }
+      physicalBytes += size.int64Value
+    }
+    guard physicalBytes == manifest.physicalBytes else {
+      throw BenchmarkError.mismatch("manifest physical bytes do not match files")
     }
   }
 
