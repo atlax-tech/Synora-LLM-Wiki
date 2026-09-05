@@ -17,10 +17,14 @@ func storeWritesOperationAndRejectsStaleRevisionWithoutPartialWrite() throws {
   #expect(try store.operationCount() == 1)
   let repeated =
     try store.saveReceipt(
-      Record(id: recordID, title: "ignored"), operationID: first.operationID)
+      Record(id: recordID, title: "first"), operationID: first.operationID)
   #expect(repeated == first)
   #expect(try store.operationCount() == 1)
   #expect(try store.record(id: recordID)?.title == "first")
+  #expect(throws: StoreError.operationConflict) {
+    try store.saveReceipt(
+      Record(id: recordID, title: "different"), operationID: first.operationID)
+  }
   #expect(throws: RevisionError.stale(expected: 0, actual: 1)) {
     try store.saveReceipt(Record(id: recordID, title: "stale", revision: 0))
   }

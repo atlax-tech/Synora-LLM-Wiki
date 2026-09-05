@@ -17,7 +17,9 @@ public struct StoreReceipt: Hashable, Sendable {
 
 public enum StoreError: Error, Equatable, Sendable {
   case missingRecord
+  case invalidRecord
   case invalidSnapshot
+  case operationConflict
 }
 
 public final class StoreProbe: RecordRepository, @unchecked Sendable {
@@ -56,7 +58,20 @@ public final class StoreProbe: RecordRepository, @unchecked Sendable {
             payload BLOB NOT NULL,
             timestamp REAL NOT NULL,
             previous_hash TEXT,
-            hash TEXT NOT NULL
+            hash TEXT NOT NULL,
+            request_hash TEXT NOT NULL DEFAULT ''
+          );
+          CREATE TABLE IF NOT EXISTS blocks (
+            id TEXT PRIMARY KEY NOT NULL,
+            record_id TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            revision INTEGER NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS assets (
+            id TEXT PRIMARY KEY NOT NULL,
+            content_hash TEXT NOT NULL,
+            byte_count INTEGER NOT NULL
           );
           CREATE TABLE IF NOT EXISTS snapshots (
             up_to_sequence INTEGER PRIMARY KEY NOT NULL,
@@ -68,6 +83,28 @@ public final class StoreProbe: RecordRepository, @unchecked Sendable {
             value TEXT NOT NULL
           );
           PRAGMA journal_mode = WAL;
+          """)
+    }
+    migrator.registerMigration("p0-replay-fingerprint") { db in
+      let operationColumns = try db.columns(in: "operations")
+      if !operationColumns.contains(where: { $0.name == "request_hash" }) {
+        try db.execute(
+          sql: "ALTER TABLE operations ADD COLUMN request_hash TEXT NOT NULL DEFAULT ''")
+      }
+      try db.execute(
+        sql: """
+          CREATE TABLE IF NOT EXISTS blocks (
+            id TEXT PRIMARY KEY NOT NULL,
+            record_id TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            revision INTEGER NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS assets (
+            id TEXT PRIMARY KEY NOT NULL,
+            content_hash TEXT NOT NULL,
+            byte_count INTEGER NOT NULL
+          );
           """)
     }
     try migrator.migrate(pool)
@@ -82,10 +119,18 @@ public final class StoreProbe: RecordRepository, @unchecked Sendable {
       else {
         return nil
       }
+      guard
+        let storedID: String = row["id"],
+        let recordID = UUID(uuidString: storedID),
+        let title: String = row["title"],
+        let revision: Int = row["revision"]
+      else {
+        throw StoreError.invalidRecord
+      }
       return SynoraDomain.Record(
-        id: UUID(uuidString: row["id"] as String)!,
-        title: row["title"],
-        revision: row["revision"]
+        id: recordID,
+        title: title,
+        revision: revision
       )
     }
   }
@@ -99,14 +144,26 @@ public final class StoreProbe: RecordRepository, @unchecked Sendable {
     -> StoreReceipt
   {
     let operationID = operationID ?? ids.next()
+    let fingerprint = requestHash(for: record)
     return try pool.write { db in
       if let existing = try Row.fetchOne(
-        db, sql: "SELECT sequence, entity_revision FROM operations WHERE id = ?",
+        db,
+        sql:
+          "SELECT sequence, entity_revision, entity_id, kind, payload, request_hash FROM operations WHERE id = ?",
         arguments: [operationID.uuidString])
       {
+        guard let storedRequestHash: String = existing["request_hash"],
+          storedRequestHash == fingerprint
+        else {
+          throw StoreError.operationConflict
+        }
+        guard let sequence: Int64 = existing["sequence"],
+          let revision: Int = existing["entity_revision"]
+        else {
+          throw StoreError.invalidRecord
+        }
         return StoreReceipt(
-          operationID: operationID, sequence: existing["sequence"],
-          revision: existing["entity_revision"])
+          operationID: operationID, sequence: sequence, revision: revision)
       }
 
       let currentRevision: Int =
@@ -126,13 +183,16 @@ public final class StoreProbe: RecordRepository, @unchecked Sendable {
         ?? 1
       let previousHash = try String.fetchOne(
         db, sql: "SELECT hash FROM operations ORDER BY sequence DESC LIMIT 1")
-      let payload = try JSONEncoder().encode(record)
+      let nextRevision = record.revision + 1
+      let persistedRecord = SynoraDomain.Record(
+        id: record.id, title: record.title, revision: nextRevision)
+      let payload = try JSONEncoder().encode(persistedRecord)
       let operation = Operation(
         id: operationID,
         transactionID: transactionID,
         sequence: sequence,
         entityID: record.id,
-        entityRevision: record.revision + 1,
+        entityRevision: nextRevision,
         kind: "record.save",
         payload: payload,
         timestamp: clock.now(),
@@ -141,8 +201,8 @@ public final class StoreProbe: RecordRepository, @unchecked Sendable {
       try db.execute(
         sql: """
           INSERT INTO operations
-            (id, transaction_id, sequence, entity_id, entity_revision, kind, payload, timestamp, previous_hash, hash)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, transaction_id, sequence, entity_id, entity_revision, kind, payload, timestamp, previous_hash, hash, request_hash)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           """,
         arguments: [
           operation.id.uuidString,
@@ -155,6 +215,7 @@ public final class StoreProbe: RecordRepository, @unchecked Sendable {
           operation.timestamp.timeIntervalSince1970,
           operation.previousHash,
           operation.hash,
+          fingerprint,
         ]
       )
       try db.execute(
@@ -176,11 +237,13 @@ public final class StoreProbe: RecordRepository, @unchecked Sendable {
   public func snapshot() throws -> Snapshot {
     try pool.write { db in
       let records = try Row.fetchAll(db, sql: "SELECT id, title, revision FROM records ORDER BY id")
-      let state = records.map {
-        [
-          "id": $0["id"] as String, "title": $0["title"] as String,
-          "revision": $0["revision"] as Int,
-        ]
+      let state = try records.map { row -> [String: Any] in
+        guard let id: String = row["id"], let title: String = row["title"],
+          let revision: Int = row["revision"]
+        else {
+          throw StoreError.invalidRecord
+        }
+        return ["id": id, "title": title, "revision": revision]
       }
       let normalized = try JSONSerialization.data(withJSONObject: state, options: [.sortedKeys])
       let sequence =
@@ -197,23 +260,48 @@ public final class StoreProbe: RecordRepository, @unchecked Sendable {
 
   public func latestSnapshot() throws -> Snapshot? {
     try pool.read { db in
-      guard
-        let row = try Row.fetchOne(
-          db,
-          sql:
-            "SELECT up_to_sequence, normalized_state, sha256 FROM snapshots ORDER BY up_to_sequence DESC LIMIT 1"
-        )
-      else {
+      let rows = try Row.fetchAll(
+        db,
+        sql:
+          "SELECT up_to_sequence, normalized_state, sha256 FROM snapshots ORDER BY up_to_sequence DESC"
+      )
+      guard !rows.isEmpty else {
         return nil
       }
-      let snapshot = Snapshot(
-        upToSequence: row["up_to_sequence"], normalizedState: row["normalized_state"])
-      return snapshot.sha256 == (row["sha256"] as String) ? snapshot : nil
+      let latestSequence =
+        try Int64.fetchOne(db, sql: "SELECT COALESCE(MAX(sequence), 0) FROM operations") ?? 0
+      var foundInvalidSnapshot = false
+      for row in rows {
+        guard let sequence: Int64 = row["up_to_sequence"],
+          let normalizedState: Data = row["normalized_state"],
+          let storedHash: String = row["sha256"],
+          sequence <= latestSequence
+        else {
+          foundInvalidSnapshot = true
+          continue
+        }
+        let snapshot = Snapshot(upToSequence: sequence, normalizedState: normalizedState)
+        if snapshot.sha256 == storedHash {
+          return snapshot
+        }
+        foundInvalidSnapshot = true
+      }
+      if foundInvalidSnapshot {
+        throw StoreError.invalidSnapshot
+      }
+      return nil
     }
   }
 
   public func projectionHash() throws -> String {
     let snapshot = try snapshot()
     return snapshot.sha256
+  }
+
+  private func requestHash(for record: SynoraDomain.Record) -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let data = (try? encoder.encode(record)) ?? Data()
+    return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
 }
