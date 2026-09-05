@@ -41,5 +41,8 @@ Ponytail 只减少无价值的实现复杂度，不能砍需求、降低验收�
 - 根 README 保持空白，直到用户另行授权。
 - 任务完成需真实测试证据；执行、独立测试、独立评审不得合并为自证。仅检查文档不能宣称产品功能 PASS。
 - `.agents/` 与 `.harness/` 仅是本机工具/状态目录，必须由 Git 忽略，不得 force-add 或作为仓库文档依赖。持久工程事实只写入 AGENTS 与 `docs/`。
+- code style 严格遵守 clean code 规范
+- git 遵守小步提交规范，每个提交只完成一个功能点
+- 阶段任务提交后在阶段结束时统一推送到github仓库
 
 治理检查命令见 [DEVELOPMENT](docs/DEVELOPMENT.md)；原生 build/test 尚不存在，不得声称验证。
