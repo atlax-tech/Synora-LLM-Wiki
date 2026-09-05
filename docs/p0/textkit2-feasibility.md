@@ -2,7 +2,7 @@
 
 Status: `CHANGES_REQUIRED` for the full exit gate; the TextKit 2 probe and Unicode range-checking fixture compile, while runtime fixture observation plus real IME, attachment, undo/redo, VoiceOver and latency measurements remain `NOT_RUN`.
 
-The P0 probe uses `NSTextView(usingTextLayoutManager: true)` through a small `NSViewRepresentable`. Its fixture contains Chinese, English, a combining mark, a ZWJ emoji and line boundaries. The fixture checks UTF-16 ranges stay ordered and inside the source string. The probe host exposes the editor and a range status in its engineering-only window.
+The P0 probe uses `NSTextView(usingTextLayoutManager: true)` through a small `NSViewRepresentable`. Its fixture contains Chinese, English, a combining mark, a ZWJ emoji and line boundaries. The fixture includes code to check that UTF-16 ranges stay ordered and inside the source string. The probe host exposes the editor and a range status in its engineering-only window.
 
 Evidence:
 
