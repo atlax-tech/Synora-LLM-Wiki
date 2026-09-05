@@ -48,7 +48,7 @@ public struct BenchmarkManifest: Codable, Hashable, Sendable {
   }
 }
 
-public enum BenchmarkError: Error, CustomStringConvertible, Sendable {
+public enum BenchmarkError: Error, CustomStringConvertible, Equatable, Sendable {
   case invalidOutput
   case mismatch(String)
 
