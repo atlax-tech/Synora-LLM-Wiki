@@ -12,3 +12,5 @@ rg -n -i 'CloudKit|CKSyncEngine|iCloud|deviceID|Lamport|sync queue|Companion|Mus
 ```
 
 Expected result: no product-code matches. Documentation may mention deferred scope and is not evidence of an implementation.
+
+Latest run: HEAD `b9f99e4`, `rg -in` over `App/`, `Packages/SynoraCore/Sources`, `Packages/SynoraCore/Package.swift`, `Tests/`, `script/`, `SynoraWiki.xcodeproj/project.pbxproj`, `SynoraWiki.xcworkspace` plus the P0 docs — product code 0 matches; the only hits are this report and the ADR-H003 deferral record, which are documentation, not implementation. Status stays `DEFERRED / VERIFIED ABSENT`.
