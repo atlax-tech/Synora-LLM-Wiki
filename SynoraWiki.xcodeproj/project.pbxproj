@@ -1,0 +1,77 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* SynoraWikiApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* SynoraWikiApp.swift */; };
+		A10000000000000000000002 /* SynoraP0ProbesApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* SynoraP0ProbesApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000001 /* SynoraWikiApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynoraWikiApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* SynoraP0ProbesApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynoraP0ProbesApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000003 /* SynoraWiki.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SynoraWiki.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000004 /* SynoraP0Probes.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SynoraP0Probes.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000005 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		A20000000000000000000006 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		A20000000000000000000007 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		A20000000000000000000008 /* SynoraWiki.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SynoraWiki.entitlements; sourceTree = "<group>"; };
+		A20000000000000000000009 /* SynoraP0Probes.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SynoraP0Probes.entitlements; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = ( ); runOnlyForDeploymentPostprocessing = 0; };
+		A30000000000000000000002 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = ( ); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A40000000000000000000001 = {isa = PBXGroup; children = (A40000000000000000000002, A40000000000000000000003, A40000000000000000000004, A40000000000000000000005, A40000000000000000000006, A40000000000000000000007, A40000000000000000000008, ); sourceTree = "<group>"; };
+		A40000000000000000000002 /* App */ = {isa = PBXGroup; children = (A20000000000000000000001, A20000000000000000000002, A20000000000000000000008, A20000000000000000000009, ); path = App; sourceTree = "<group>"; };
+		A40000000000000000000003 /* Config */ = {isa = PBXGroup; children = (A20000000000000000000005, A20000000000000000000006, A20000000000000000000007, ); path = Config; sourceTree = "<group>"; };
+		A40000000000000000000004 /* Products */ = {isa = PBXGroup; children = (A20000000000000000000003, A20000000000000000000004, ); name = Products; sourceTree = "<group>"; };
+		A40000000000000000000005 /* Synora Wiki */ = {isa = PBXGroup; children = ( ); name = "Synora Wiki"; sourceTree = "<group>"; };
+		A40000000000000000000006 /* Synora P0 Probes */ = {isa = PBXGroup; children = ( ); name = "Synora P0 Probes"; sourceTree = "<group>"; };
+		A40000000000000000000007 /* Tests */ = {isa = PBXGroup; children = ( ); path = Tests; sourceTree = "<group>"; };
+		A40000000000000000000008 /* Packages */ = {isa = PBXGroup; children = ( ); path = Packages; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A50000000000000000000001 /* SynoraWiki */ = {isa = PBXNativeTarget; buildConfigurationList = A60000000000000000000001 /* Build configuration list for PBXNativeTarget "SynoraWiki" */; buildPhases = (A30000000000000000000003, A30000000000000000000001, A30000000000000000000004, ); buildRules = ( ); dependencies = ( ); name = SynoraWiki; productName = SynoraWiki; productReference = A20000000000000000000003 /* SynoraWiki.app */; productType = "com.apple.product-type.application"; };
+		A50000000000000000000002 /* SynoraP0Probes */ = {isa = PBXNativeTarget; buildConfigurationList = A60000000000000000000002 /* Build configuration list for PBXNativeTarget "SynoraP0Probes" */; buildPhases = (A30000000000000000000005, A30000000000000000000002, A30000000000000000000006, ); buildRules = ( ); dependencies = ( ); name = SynoraP0Probes; productName = SynoraP0Probes; productReference = A20000000000000000000004 /* SynoraP0Probes.app */; productType = "com.apple.product-type.application"; };
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A70000000000000000000001 /* Project object */ = {isa = PBXProject; attributes = { LastSwiftUpdateCheck = 2600; TargetAttributes = { A50000000000000000000001 = { CreatedOnToolsVersion = 26.0; }; A50000000000000000000002 = { CreatedOnToolsVersion = 26.0; }; }; }; buildConfigurationList = A60000000000000000000003 /* Build configuration list for PBXProject "SynoraWiki" */; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = ( en, Base, ); mainGroup = A40000000000000000000001; productRefGroup = A40000000000000000000004 /* Products */; projectDirPath = ""; projectRoot = ""; targets = ( A50000000000000000000001, A50000000000000000000002, ); };
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A30000000000000000000004 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ( ); runOnlyForDeploymentPostprocessing = 0; };
+		A30000000000000000000006 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ( ); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A30000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( A10000000000000000000001 /* SynoraWikiApp.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
+		A30000000000000000000005 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( A10000000000000000000002 /* SynoraP0ProbesApp.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A80000000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; baseConfigurationReference = A20000000000000000000006 /* Debug.xcconfig */; buildSettings = { CODE_SIGN_ENTITLEMENTS = App/SynoraWiki.entitlements; PRODUCT_BUNDLE_IDENTIFIER = "tech.atlax.SynoraWiki"; PRODUCT_NAME = "SynoraWiki"; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = "Synora Wiki"; }; name = Debug; };
+		A80000000000000000000002 /* Release */ = {isa = XCBuildConfiguration; baseConfigurationReference = A20000000000000000000007 /* Release.xcconfig */; buildSettings = { CODE_SIGN_ENTITLEMENTS = App/SynoraWiki.entitlements; PRODUCT_BUNDLE_IDENTIFIER = "tech.atlax.SynoraWiki"; PRODUCT_NAME = "SynoraWiki"; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = "Synora Wiki"; }; name = Release; };
+		A80000000000000000000003 /* Debug */ = {isa = XCBuildConfiguration; baseConfigurationReference = A20000000000000000000006 /* Debug.xcconfig */; buildSettings = { CODE_SIGN_ENTITLEMENTS = App/SynoraP0Probes.entitlements; PRODUCT_BUNDLE_IDENTIFIER = "tech.atlax.SynoraWiki.P0Probes"; PRODUCT_NAME = "SynoraP0Probes"; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = "Synora P0 Probes"; }; name = Debug; };
+		A80000000000000000000004 /* Release */ = {isa = XCBuildConfiguration; baseConfigurationReference = A20000000000000000000007 /* Release.xcconfig */; buildSettings = { CODE_SIGN_ENTITLEMENTS = App/SynoraP0Probes.entitlements; PRODUCT_BUNDLE_IDENTIFIER = "tech.atlax.SynoraWiki.P0Probes"; PRODUCT_NAME = "SynoraP0Probes"; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = "Synora P0 Probes"; }; name = Release; };
+		A80000000000000000000005 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { SDKROOT = macosx; }; name = Debug; };
+		A80000000000000000000006 /* Release */ = {isa = XCBuildConfiguration; buildSettings = { SDKROOT = macosx; }; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A60000000000000000000001 /* Build configuration list for PBXNativeTarget "SynoraWiki" */ = {isa = XCConfigurationList; buildConfigurations = ( A80000000000000000000001 /* Debug */, A80000000000000000000002 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A60000000000000000000002 /* Build configuration list for PBXNativeTarget "SynoraP0Probes" */ = {isa = XCConfigurationList; buildConfigurations = ( A80000000000000000000003 /* Debug */, A80000000000000000000004 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A60000000000000000000003 /* Build configuration list for PBXProject "SynoraWiki" */ = {isa = XCConfigurationList; buildConfigurations = ( A80000000000000000000005 /* Debug */, A80000000000000000000006 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = A70000000000000000000001 /* Project object */;
+}
