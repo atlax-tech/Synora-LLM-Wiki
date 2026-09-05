@@ -14,6 +14,12 @@
 - `App/SynoraP0ProbesApp.swift` 在可用 SDK 和 macOS 26.0 上读取 `SystemLanguageModel.default.isAvailable`，否则显示明确的不可用状态。
 - `script/quality.sh` 默认 workspace 路径的正式应用 Debug/Release、probe/XPC 集成构建、SwiftPM 测试和 XCUITest 在本机通过（产物定向到 `/private/tmp`）；未运行多设备/地区矩阵。
 
+## 备选
+
+- 支持 macOS 15+ 多版本基线：被否决。没有旧系统设备与真实矩阵证据，Foundation Models 与 Swift 6 工具链在旧系统上的行为无法核实，会伪造兼容承诺。
+- 纯 SwiftPM 包、无 Xcode 工程：被否决。P0 需要应用沙箱、XPC service 嵌入、XCTest/XCUITest 和 entitlement 签名验证，这些能力依赖原生工程。
+- 交叉平台抽象层（如 Qt/Electron）：被否决。产品是原生 macOS 记录与知识库，依赖 TextKit 2 与系统集成，抽象层会放大而非减少风险探针要验证的问题。
+
 ## 取舍与回滚
 
 保持当前探针配置可复现，避免在没有设备证据时伪造兼容承诺。若矩阵证明更低系统可行，降低产品目标并补等价降级；若证明不可行，保留 26.0 作为产品基线并在发布说明中记录。

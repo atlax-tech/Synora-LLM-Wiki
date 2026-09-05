@@ -8,9 +8,11 @@
 
 ## 证据
 
-- `App/SynoraAgentServiceProbe.swift` 是独立 XPC target，只接受同用户连接，通过共享 policy 拒绝非法、过期、超限和已取消请求并返回结构化状态。
-- `SynoraSkillProbe` 的 policy 单元测试覆盖未声明 capability 和非 loopback host；`bootstrap_wasmtime.sh` 固定 Wasmtime 48.0.1 官方 C API 包。本机已执行一次 `script/p0.sh skill` 并验证该归档 SHA-256，但这不等于真实 runtime 已接入。
-- 统一质量门已构建共享 policy、service 与嵌入它的 probe host。当前 service 返回 `runtimeUnavailable`；未执行真实 Wasmtime guest，也未跑无 preopen、环境继承、崩溃重连、fuel 或 ≤100 ms 取消实验。
+- `App/SynoraAgentServiceProbe.swift` 是独立 XPC target，只接受同用户连接，通过共享 policy 拒绝非法、过期、超限和已取消请求并返回结构化状态；request deadline 与取消标志透传到运行时。
+- `CWasmtimeShim` 以 `wasmtime_config_epoch_interruption_set` + `wasmtime_context_set_epoch_deadline` 实现运行期中断：deadline 到期或取消标志置位时 epoch 线程递增 epoch，guest 被 trap 而非永久挂起。选择 epoch interruption 而非 fuel：deadline/取消语义直接映射 epoch 递增，无需按指令计费配置。
+- `script/p0.sh skill`（HEAD `b9f99e4`，8/8 通过，使用 SHA-256 校验过的 Wasmtime 48.0.1 库）：合法 guest 正常执行；200 ms deadline 终止无限循环 guest（实测 ~255 ms）；50 ms 置位的取消在 ~56 ms 生效（≤100 ms 预算）；导入 `env.f` 的模块实例化失败——无 host import、无 WASI preopen、无环境继承、无网络，文件/环境/网络越权在结构上不可达。
+- `script/quality.sh` 的 XPC 端到端 fixture：宿主 app 连接内嵌 XPC service 执行真实 guest，容器 temp 报告 `{"status":"success"}`，非 success 令质量门失败。
+- 仍未运行：capability callback broker（guest 经 host 代理请求能力）、服务主动 abort 后的崩溃重连演练、远端 CI。
 
 ## 备选与后果
 

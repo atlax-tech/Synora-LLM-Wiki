@@ -10,7 +10,8 @@
 
 - `Packages/SynoraCore/Package.swift` 精确固定 GRDB 7.10.0；`StoreProbe` 创建 WAL 数据库、operation log、snapshots 和 metadata 表。
 - `SynoraStoreProbeTests` 证明正常保存、相同请求重复 operation ID 返回同一 receipt 且不改变 projection、不同请求复用 ID 被拒绝、过期 revision 不产生部分写入和快照校验；全量 SwiftPM 测试通过。
-- 未运行 100k replay、进程终止、损坏快照、迁移回滚或 `SQLITE_FULL` 注入。
+- `script/p0.sh store`（heavy 套件，HEAD `8313181`）实测通过：固定 seed 100,000 混合操作的 projection/全量重放/快照恢复哈希一致；3 轮 SIGKILL 后重开哈希链完整、最多丢失末尾一对操作；6 MiB APFS 磁盘映像触发 `SQLITE_FULL` 且最后已提交状态可恢复；乱序重放被原子拒绝。
+- 仍未运行：schema 迁移回滚矩阵与跨版本升级演练（属 P3/P9 范围）。
 
 ## 备选与后果
 
