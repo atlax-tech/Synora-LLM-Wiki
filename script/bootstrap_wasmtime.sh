@@ -20,9 +20,19 @@ actual=$(shasum -a 256 "$archive" | awk '{print $1}')
 }
 
 extract_dir="$vendor_dir/extracted"
-if [[ ! -d "$extract_dir" ]]; then
+marker="$extract_dir/.verified-$sha256"
+if [[ ! -f "$marker" || ! -f "$extract_dir/include/wasmtime.h" || \
+  ! -f "$extract_dir/lib/libwasmtime.dylib" || ! -f "$extract_dir/lib/libwasmtime.a" || \
+  ! -f "$extract_dir/LICENSE" ]]; then
   mkdir -p "$extract_dir"
   tar -xJf "$archive" --strip-components=1 -C "$extract_dir"
+  [[ -f "$extract_dir/include/wasmtime.h" && -f "$extract_dir/lib/libwasmtime.dylib" && \
+    -f "$extract_dir/lib/libwasmtime.a" && -f "$extract_dir/LICENSE" ]] || {
+    print -u2 "Wasmtime archive is missing the expected C API files"
+    exit 1
+  }
+  print -r -- "$sha256" > "$marker.tmp"
+  mv -f "$marker.tmp" "$marker"
 fi
 
 print "Wasmtime $version verified: $extract_dir"

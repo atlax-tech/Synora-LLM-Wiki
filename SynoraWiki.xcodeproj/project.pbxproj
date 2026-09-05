@@ -14,6 +14,7 @@
 		A10000000000000000000007 /* TextKit2Probe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* TextKit2Probe.swift */; };
 		A10000000000000000000005 /* SynoraAgentServiceProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* SynoraAgentServiceProbe.swift */; };
 		A10000000000000000000006 /* SynoraAgentServiceProbe.xpc in Embed Probe */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* SynoraAgentServiceProbe.xpc */; settings = {ATTRIBUTES = ( ); }; };
+		A10000000000000000000008 /* SynoraSkillProbe in Frameworks */ = {isa = PBXBuildFile; productRef = AB00000000000000000000001 /* SynoraSkillProbe */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -60,7 +61,7 @@
 		A50000000000000000000002 /* SynoraP0Probes */ = {isa = PBXNativeTarget; buildConfigurationList = A60000000000000000000002 /* Build configuration list for PBXNativeTarget "SynoraP0Probes" */; buildPhases = (A30000000000000000000005, A30000000000000000000002, A30000000000000000000006, A30000000000000000000016, ); buildRules = ( ); dependencies = (A90000000000000000000002, ); name = SynoraP0Probes; productName = SynoraP0Probes; productReference = A20000000000000000000004 /* SynoraP0Probes.app */; productType = "com.apple.product-type.application"; };
 		A50000000000000000000003 /* SynoraWikiTests */ = {isa = PBXNativeTarget; buildConfigurationList = A60000000000000000000003 /* Build configuration list for PBXNativeTarget "SynoraWikiTests" */; buildPhases = (A30000000000000000000007, A30000000000000000000011, A30000000000000000000009, ); buildRules = ( ); dependencies = ( ); name = SynoraWikiTests; productName = SynoraWikiTests; productReference = A20000000000000000000012 /* SynoraWikiTests.xctest */; productType = "com.apple.product-type.bundle.unit-test"; };
 		A50000000000000000000004 /* SynoraP0UITests */ = {isa = PBXNativeTarget; buildConfigurationList = A60000000000000000000004 /* Build configuration list for PBXNativeTarget "SynoraP0UITests" */; buildPhases = (A30000000000000000000008, A30000000000000000000012, A30000000000000000000010, ); buildRules = ( ); dependencies = (A90000000000000000000001, ); name = SynoraP0UITests; productName = SynoraP0UITests; productReference = A20000000000000000000013 /* SynoraP0UITests.xctest */; productType = "com.apple.product-type.bundle.ui-testing"; };
-		A50000000000000000000005 /* SynoraAgentServiceProbe */ = {isa = PBXNativeTarget; buildConfigurationList = A60000000000000000000006 /* Build configuration list for PBXNativeTarget "SynoraAgentServiceProbe" */; buildPhases = (A30000000000000000000013, A30000000000000000000014, A30000000000000000000015, ); buildRules = ( ); dependencies = ( ); name = SynoraAgentServiceProbe; productName = SynoraAgentServiceProbe; productReference = A20000000000000000000016 /* SynoraAgentServiceProbe.xpc */; productType = "com.apple.product-type.xpc-service"; };
+		A50000000000000000000005 /* SynoraAgentServiceProbe */ = {isa = PBXNativeTarget; buildConfigurationList = A60000000000000000000006 /* Build configuration list for PBXNativeTarget "SynoraAgentServiceProbe" */; buildPhases = (A30000000000000000000013, A30000000000000000000014, A30000000000000000000015, ); buildRules = ( ); dependencies = ( ); name = SynoraAgentServiceProbe; packageProductDependencies = (AB00000000000000000000001 /* SynoraSkillProbe */, ); productName = SynoraAgentServiceProbe; productReference = A20000000000000000000016 /* SynoraAgentServiceProbe.xpc */; productType = "com.apple.product-type.xpc-service"; };
 /* End PBXNativeTarget section */
 
 /* Begin PBXTargetDependency section */
@@ -74,7 +75,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXProject section */
-		A70000000000000000000001 /* Project object */ = {isa = PBXProject; attributes = { LastSwiftUpdateCheck = 2600; TargetAttributes = { A50000000000000000000001 = { CreatedOnToolsVersion = 26.0; }; A50000000000000000000002 = { CreatedOnToolsVersion = 26.0; }; A50000000000000000000003 = { CreatedOnToolsVersion = 26.0; TestTargetID = A50000000000000000000001; }; A50000000000000000000004 = { CreatedOnToolsVersion = 26.0; TestTargetID = A50000000000000000000001; }; A50000000000000000000005 = { CreatedOnToolsVersion = 26.0; }; }; }; buildConfigurationList = A60000000000000000000005 /* Build configuration list for PBXProject "SynoraWiki" */; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = ( en, Base, ); mainGroup = A40000000000000000000001; productRefGroup = A40000000000000000000004 /* Products */; projectDirPath = ""; projectRoot = ""; targets = ( A50000000000000000000001, A50000000000000000000002, A50000000000000000000003, A50000000000000000000004, A50000000000000000000005, ); };
+		A70000000000000000000001 /* Project object */ = {isa = PBXProject; attributes = { LastSwiftUpdateCheck = 2600; TargetAttributes = { A50000000000000000000001 = { CreatedOnToolsVersion = 26.0; }; A50000000000000000000002 = { CreatedOnToolsVersion = 26.0; }; A50000000000000000000003 = { CreatedOnToolsVersion = 26.0; TestTargetID = A50000000000000000000001; }; A50000000000000000000004 = { CreatedOnToolsVersion = 26.0; TestTargetID = A50000000000000000000001; }; A50000000000000000000005 = { CreatedOnToolsVersion = 26.0; }; }; }; buildConfigurationList = A60000000000000000000005 /* Build configuration list for PBXProject "SynoraWiki" */; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = ( en, Base, ); mainGroup = A40000000000000000000001; packageReferences = (AC00000000000000000000001 /* XCLocalSwiftPackageReference "SynoraCore" */, ); productRefGroup = A40000000000000000000004 /* Products */; projectDirPath = ""; projectRoot = ""; targets = ( A50000000000000000000001, A50000000000000000000002, A50000000000000000000003, A50000000000000000000004, A50000000000000000000005, ); };
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
@@ -83,7 +84,7 @@
 		A30000000000000000000009 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ( ); runOnlyForDeploymentPostprocessing = 0; };
 		A30000000000000000000010 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ( ); runOnlyForDeploymentPostprocessing = 0; };
 		A30000000000000000000013 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( A10000000000000000000005 /* SynoraAgentServiceProbe.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
-		A30000000000000000000014 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = ( ); runOnlyForDeploymentPostprocessing = 0; };
+		A30000000000000000000014 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = ( A10000000000000000000008 /* SynoraSkillProbe in Frameworks */, ); runOnlyForDeploymentPostprocessing = 0; };
 		A30000000000000000000015 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ( ); runOnlyForDeploymentPostprocessing = 0; };
 		A30000000000000000000016 /* Embed Probe */ = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = ( A10000000000000000000006 /* SynoraAgentServiceProbe.xpc in Embed Probe */, ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
@@ -118,6 +119,14 @@
 		A60000000000000000000005 /* Build configuration list for PBXProject "SynoraWiki" */ = {isa = XCConfigurationList; buildConfigurations = ( A80000000000000000000005 /* Debug */, A80000000000000000000006 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 		A60000000000000000000006 /* Build configuration list for PBXNativeTarget "SynoraAgentServiceProbe" */ = {isa = XCConfigurationList; buildConfigurations = ( A80000000000000000000011 /* Debug */, A80000000000000000000012 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		AC00000000000000000000001 /* XCLocalSwiftPackageReference "SynoraCore" */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/SynoraCore; };
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AB00000000000000000000001 /* SynoraSkillProbe */ = {isa = XCSwiftPackageProductDependency; package = AC00000000000000000000001 /* XCLocalSwiftPackageReference "SynoraCore" */; productName = SynoraSkillProbe; };
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A70000000000000000000001 /* Project object */;
 }

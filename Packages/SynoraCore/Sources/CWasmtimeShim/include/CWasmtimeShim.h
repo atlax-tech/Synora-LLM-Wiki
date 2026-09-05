@@ -3,6 +3,6 @@
 
 #include <stdbool.h>
 
-bool synora_wasmtime_library_available(const char *path);
+bool synora_wasmtime_library_available(const char *path, const char *allowed_root);
 
 #endif
