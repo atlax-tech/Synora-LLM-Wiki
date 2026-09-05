@@ -1,4 +1,7 @@
+import Foundation
 import SwiftUI
+
+import SynoraSkillProbe
 
 #if canImport(FoundationModels)
   import FoundationModels
@@ -15,6 +18,7 @@ struct SynoraP0ProbesApp: App {
 
 private struct P0ProbeOverview: View {
   let report: PlatformProbeReport
+  @State private var skillStatus = "pending"
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
@@ -32,6 +36,8 @@ private struct P0ProbeOverview: View {
           "TextKit 2 ranges",
           value: TextKit2ProbeResult.fixture.rangesValid ? "valid" : "invalid"
         )
+        LabeledContent("Wasmtime XPC", value: skillStatus)
+          .accessibilityIdentifier("wasmtime-xpc-status")
       }
       .textSelection(.enabled)
 
@@ -43,6 +49,60 @@ private struct P0ProbeOverview: View {
     }
     .frame(minWidth: 720, minHeight: 480, alignment: .topLeading)
     .padding()
+    .task {
+      skillStatus = await AgentServiceProbeClient.runFixture()
+    }
+  }
+}
+
+@objc private protocol AgentServiceProbeProtocol {
+  func run(_ request: Data, withReply reply: @escaping (Data) -> Void)
+}
+
+private enum AgentServiceProbeClient {
+  private struct Result: Decodable {
+    let code: String
+    let message: String
+  }
+
+  static func runFixture() async -> String {
+    let connection = NSXPCConnection(serviceName: "tech.atlax.SynoraWiki.P0Probes.AgentProbe")
+    connection.remoteObjectInterface = NSXPCInterface(with: AgentServiceProbeProtocol.self)
+    connection.resume()
+    defer { connection.invalidate() }
+
+    let module = Data([
+      0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00,
+      0x01, 0x04, 0x01, 0x60, 0x00, 0x00,
+      0x03, 0x02, 0x01, 0x00,
+      0x08, 0x01, 0x00,
+      0x0A, 0x04, 0x01, 0x02, 0x00, 0x0B,
+    ])
+    let request = SkillRequest(
+      requestID: UUID(),
+      module: module,
+      policy: CapabilityPolicy(),
+      deadline: Date().addingTimeInterval(10)
+    )
+    guard let data = try? JSONEncoder().encode(request) else { return "encode failed" }
+
+    return await withCheckedContinuation { continuation in
+      let proxy = connection.remoteObjectProxyWithErrorHandler { error in
+        continuation.resume(returning: "connection failed: \(error.localizedDescription)")
+      }
+      guard let service = proxy as? AgentServiceProbeProtocol else {
+        continuation.resume(returning: "interface failed")
+        return
+      }
+      service.run(data) { response in
+        guard let result = try? JSONDecoder().decode(Result.self, from: response) else {
+          continuation.resume(returning: "invalid response")
+          return
+        }
+        continuation.resume(
+          returning: result.code == "success" ? "success" : "\(result.code): \(result.message)")
+      }
+    }
   }
 }
 

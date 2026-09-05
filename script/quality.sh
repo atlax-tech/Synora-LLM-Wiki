@@ -7,6 +7,8 @@ derived_data="$artifact_dir/xcode"
 mkdir -p "$artifact_dir"
 cd "$root_dir"
 
+"$root_dir/script/bootstrap_wasmtime.sh"
+
 if [[ "${SYNORA_XCODE_CONTAINER:-workspace}" == "project" ]]; then
   xcode_container=(-project "$root_dir/SynoraWiki.xcodeproj")
 else

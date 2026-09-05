@@ -45,10 +45,12 @@ final class SynoraAgentService: NSObject, NSXPCListenerDelegate, AgentServicePro
           try SkillPolicyEvaluator().validate(decoded, now: Date())
           if isCancelled(decoded.requestID.uuidString) {
             result = SkillServiceResult(code: "cancelled", message: "request cancelled")
+          } else if runGuest(decoded.module) {
+            result = SkillServiceResult(code: "success", message: "guest start completed")
           } else {
             result = SkillServiceResult(
-              code: "runtimeUnavailable",
-              message: "Wasmtime runtime is supplied by bootstrap_wasmtime.sh")
+              code: "runtimeFailure",
+              message: "guest execution failed")
           }
         } catch let error as SkillPolicyError {
           result = serviceResult(for: error)
@@ -117,6 +119,15 @@ final class SynoraAgentService: NSObject, NSXPCListenerDelegate, AgentServicePro
 
   private func encode(_ result: SkillServiceResult) -> Data {
     (try? JSONEncoder().encode(result)) ?? Data()
+  }
+
+  private func runGuest(_ module: Data) -> Bool {
+    guard let frameworks = Bundle.main.privateFrameworksURL else { return false }
+    let library = frameworks.appendingPathComponent("libwasmtime.dylib")
+    return WasmtimeProbe.runStart(
+      module: module,
+      library: library.path,
+      under: frameworks.path)
   }
 }
 

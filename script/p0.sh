@@ -10,6 +10,7 @@ usage() {
 }
 
 run_textkit() {
+  "$root_dir/script/bootstrap_wasmtime.sh"
   xcodebuild -project "$root_dir/SynoraWiki.xcodeproj" -scheme SynoraP0Probes \
     -configuration Debug -derivedDataPath "$derived_data/p0-probes" \
     CODE_SIGNING_ALLOWED=YES build
