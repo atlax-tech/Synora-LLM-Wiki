@@ -124,4 +124,15 @@ public enum WasmtimeProbe {
       }
     }
   }
+
+  public static func runStart(module: Data, library: String, under root: String) -> Bool {
+    module.withUnsafeBytes { bytes in
+      library.withCString { libraryPointer in
+        root.withCString { rootPointer in
+          synora_wasmtime_run_start(
+            libraryPointer, rootPointer, bytes.bindMemory(to: UInt8.self).baseAddress, module.count)
+        }
+      }
+    }
+  }
 }

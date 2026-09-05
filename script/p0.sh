@@ -22,6 +22,8 @@ run_store() {
 
 run_skill() {
   "$root_dir/script/bootstrap_wasmtime.sh"
+  local wasmtime_dir="${SYNORA_WASMTIME_DIR:-$root_dir/.build/vendor/wasmtime/v48.0.1}"
+  export SYNORA_WASMTIME_ROOT="$wasmtime_dir/extracted"
   swift test --package-path "$root_dir/Packages/SynoraCore" \
     --scratch-path "$scratch_path" --filter SynoraSkillProbeTests
 }

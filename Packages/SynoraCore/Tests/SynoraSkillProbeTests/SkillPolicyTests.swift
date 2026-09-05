@@ -61,3 +61,19 @@ func requestValidationRejectsInvalidModuleAndTooSmallResponseLimit() {
     try evaluator.validate(invalidResponseLimit, now: Date(timeIntervalSince1970: 0))
   }
 }
+
+@Test
+func verifiedWasmtimeExecutesGuestStartFunction() throws {
+  let environment = ProcessInfo.processInfo.environment
+  guard let root = environment["SYNORA_WASMTIME_ROOT"] else { return }
+  let library = URL(fileURLWithPath: root).appendingPathComponent("lib/libwasmtime.dylib").path
+  let startModule = Data([
+    0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00,
+    0x01, 0x04, 0x01, 0x60, 0x00, 0x00,
+    0x03, 0x02, 0x01, 0x00,
+    0x08, 0x01, 0x00,
+    0x0A, 0x04, 0x01, 0x02, 0x00, 0x0B,
+  ])
+  #expect(WasmtimeProbe.runStart(module: startModule, library: library, under: root))
+  #expect(!WasmtimeProbe.runStart(module: Data([0, 1]), library: library, under: root))
+}
