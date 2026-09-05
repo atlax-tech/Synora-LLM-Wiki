@@ -98,7 +98,7 @@ public protocol RecordRepository: Sendable {
 }
 
 public protocol TransactionRunner: Sendable {
-  func inTransaction<T: Sendable>(_ body: () throws -> T) throws -> T
+  func inTransaction<T: Sendable>(_ body: @Sendable () throws -> T) throws -> T
 }
 
 public struct Operation: Codable, Hashable, Sendable {
