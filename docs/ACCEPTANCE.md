@@ -2,7 +2,7 @@
 
 适用范围以 [PRODUCT §5.3](PRODUCT.md#53-当前服务与交付边界) 为准；DEFERRED 项不进入任何已规划阶段的依赖、完成率或退出门槛，不记为 BLOCKED，不要求 Apple 开发者账号。
 
-状态：NOT_RUN。需求与数值是目标，不是实现证据；历史 Web QA 不作为原生验收。
+状态：P0 `CHANGES_REQUIRED`，其余阶段 `NOT_RUN`。需求与数值是目标，不是实现证据；历史 Web QA 不作为原生验收。
 
 ## 产品验收场景
 
@@ -32,6 +32,8 @@
 ## 阶段退出门槛
 
 ### P0 — 架构与风险探针
+
+当前判定：`CHANGES_REQUIRED`。本机与隔离 clone 的自动 build/test 已通过，但真实 IME/VoiceOver/延迟、100k replay 与故障注入、真实 Wasmtime guest 隔离矩阵、20 GiB full corpus、sentinel 扫描和远端 CI 尚未通过；详见 [P0 traceability](p0/traceability.md)。
 
 - P0-04/05/07 探针覆盖的硬性场景无未知致命阻塞；主方案失败时备选必须实际跑通。
 - 主线程输入预算、GRDB 重放恢复和 XPC 隔离均有可重复测量结果。

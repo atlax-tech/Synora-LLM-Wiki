@@ -1,7 +1,7 @@
 # Synora Wiki
 
 个人、开源、原生 macOS 记录与知识库；完整产品范围见 PRODUCT。
-当前只有规划与本地高保真参考，没有原生业务实现；P0–P9 均未启动。
+P0 正在执行，当前出口为 `CHANGES_REQUIRED`；P1–P9 未启动。已有原生工程与专用风险探针，不构成产品业务功能完成。
 
 付费 Apple 服务与同步范围见 [PRODUCT §5.3](docs/PRODUCT.md#53-当前服务与交付边界) 和 [ADR-H003](docs/decisions/ADR-H003-free-local-services.md)：不作为 P0 或后续阶段 blocker；保留本地功能与恢复质量门。
 
@@ -50,4 +50,4 @@ Ponytail 只减少无价值的实现复杂度，不能砍需求、降低验收�
 - git 遵守小步提交规范，每个提交只完成一个功能点
 - 阶段任务提交后在阶段结束时统一推送到github仓库
 
-治理检查命令见 [DEVELOPMENT](docs/DEVELOPMENT.md)；原生 build/test 尚不存在，不得声称验证。
+治理检查命令见 [DEVELOPMENT](docs/DEVELOPMENT.md)；P0 自动 build/test 证据见 [P0 日志](docs/development-log/2026-09-06-p0.md)，未运行场景不得声称验证。

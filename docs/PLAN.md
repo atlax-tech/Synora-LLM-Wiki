@@ -2,11 +2,13 @@
 
 适用范围以 [PRODUCT §5.3](PRODUCT.md#53-当前服务与交付边界) 为准；DEFERRED 项不进入任何已规划阶段的依赖、完成率或退出门槛，不记为 BLOCKED，不要求 Apple 开发者账号。
 
-状态：NOT_STARTED；方案细化不启动 P0–P9。
+状态：P0 `CHANGES_REQUIRED`；P1–P9 `NOT_STARTED`。P0 源码基线 `771d773` 已通过本机及隔离 clone 自动质量门；真实 IME/VoiceOver/性能、存储故障注入、真实 Wasmtime guest、20 GiB corpus、sentinel 扫描与远端 CI 尚未通过，不能启动 P1。
 
 本文件只定义任务与依赖。阶段目标见 [SPEC.md](SPEC.md)，流程见 [DEVELOPMENT.md](DEVELOPMENT.md)，测试见 [TESTING.md](TESTING.md)，验收见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 
 ## P0 — 架构与风险探针
+
+当前证据与缺口见 [P0 traceability](p0/traceability.md) 和 [2026-09-06 P0 日志](development-log/2026-09-06-p0.md)。任务范围保持不变。
 
 ### 任务拆分
 
