@@ -113,7 +113,9 @@ public struct BenchmarkGenerator: Sendable {
       physicalBytes: physicalBytes,
       files: files
     )
-    let data = try JSONEncoder().encode(manifest)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    let data = try encoder.encode(manifest)
     try atomicWrite(data, to: manifestURL)
     return manifest
   }
@@ -238,8 +240,7 @@ public struct BenchmarkGenerator: Sendable {
   private func atomicWrite(_ data: Data, to url: URL) throws {
     let temporary = url.appendingPathExtension("tmp")
     try data.write(to: temporary, options: .atomic)
-    try? FileManager.default.removeItem(at: url)
-    try FileManager.default.moveItem(at: temporary, to: url)
+    try replaceItem(temporary, at: url)
   }
 
   private func sha256(_ url: URL) throws -> String {

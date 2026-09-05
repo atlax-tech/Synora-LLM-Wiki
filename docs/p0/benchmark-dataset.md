@@ -7,6 +7,6 @@ Status: `CHANGES_REQUIRED` for the full exit gate; the smoke profile is determin
 Evidence:
 
 - `swift test --package-path Packages/SynoraCore` → deterministic smoke generation and resume test pass.
-- `script/p0.sh benchmark` generates the smoke profile twice and compares the manifest checksum.
+- `script/p0.sh benchmark` generates the smoke profile in two clean directories, compares every file, then verifies `--resume` leaves the manifest unchanged.
 
 The full profile intentionally remains opt-in because it allocates 20 GiB of local storage. It is never generated in Git or CI.

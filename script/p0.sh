@@ -28,16 +28,24 @@ run_skill() {
 
 run_benchmark() {
   local output="${SYNORA_BENCHMARK_DIR:-/private/tmp/synora-wiki-benchmark-smoke}"
-  rm -rf "$output"
+  local second_output="${output}.second"
+  rm -rf "$output" "$second_output"
   swift run --package-path "$root_dir/Packages/SynoraCore" \
     --scratch-path "$scratch_path" SynoraBenchmarkGenerator \
-    --profile smoke --seed 20260905 --output "$output"
+    --profile smoke --seed 20260905 --output "$output" >/dev/null
+  swift run --package-path "$root_dir/Packages/SynoraCore" \
+    --scratch-path "$scratch_path" SynoraBenchmarkGenerator \
+    --profile smoke --seed 20260905 --output "$second_output" >/dev/null
+  for file in manifest.json records.jsonl blocks.jsonl assets/payload.tiff; do
+    cmp "$output/$file" "$second_output/$file"
+  done
   local first_hash
   first_hash=$(shasum -a 256 "$output/manifest.json" | awk '{print $1}')
   swift run --package-path "$root_dir/Packages/SynoraCore" \
     --scratch-path "$scratch_path" SynoraBenchmarkGenerator \
     --profile smoke --seed 20260905 --output "$output" --resume >/dev/null
   [[ "$first_hash" == "$(shasum -a 256 "$output/manifest.json" | awk '{print $1}')" ]]
+  rm -rf "$second_output"
   print "benchmark smoke verified: $output"
 }
 

@@ -7,11 +7,23 @@ import Testing
 @Test
 func smokeGenerationIsDeterministicAndResumable() throws {
   let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-  defer { try? FileManager.default.removeItem(at: root) }
+  let secondRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  defer {
+    try? FileManager.default.removeItem(at: root)
+    try? FileManager.default.removeItem(at: secondRoot)
+  }
   let generator = BenchmarkGenerator()
   let first = try generator.generate(profile: .smoke, output: root)
-  let second = try generator.generate(profile: .smoke, output: root)
+  let second = try generator.generate(profile: .smoke, output: secondRoot)
   #expect(first == second)
+  for path in ["manifest.json", "records.jsonl", "blocks.jsonl", "assets/payload.tiff"] {
+    #expect(
+      try Data(contentsOf: root.appendingPathComponent(path))
+        == Data(contentsOf: secondRoot.appendingPathComponent(path))
+    )
+  }
+  let resumed = try generator.generate(profile: .smoke, output: root, resume: true)
+  #expect(resumed == first)
   try generator.verify(first, in: root)
 }
 
