@@ -86,7 +86,7 @@ private enum AgentServiceProbeClient {
     )
     guard let data = try? JSONEncoder().encode(request) else { return "encode failed" }
 
-    return await withCheckedContinuation { continuation in
+    let status: String = await withCheckedContinuation { continuation in
       let proxy = connection.remoteObjectProxyWithErrorHandler { error in
         continuation.resume(returning: "connection failed: \(error.localizedDescription)")
       }
@@ -103,6 +103,18 @@ private enum AgentServiceProbeClient {
           returning: result.code == "success" ? "success" : "\(result.code): \(result.message)")
       }
     }
+    Self.writeFixtureReport(status)
+    return status
+  }
+
+  /// Persists the fixture outcome so scripts can verify the XPC + guest run without
+  /// needing accessibility access to the window.
+  private static func writeFixtureReport(_ status: String) {
+    let report = ["status": status]
+    guard let data = try? JSONSerialization.data(withJSONObject: report) else { return }
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("synora-xpc-fixture.json")
+    try? data.write(to: url)
   }
 }
 

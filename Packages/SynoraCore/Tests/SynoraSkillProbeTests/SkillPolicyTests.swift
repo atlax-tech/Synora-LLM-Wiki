@@ -77,3 +77,67 @@ func verifiedWasmtimeExecutesGuestStartFunction() throws {
   #expect(WasmtimeProbe.runStart(module: startModule, library: library, under: root))
   #expect(!WasmtimeProbe.runStart(module: Data([0, 1]), library: library, under: root))
 }
+
+// (func (loop br 0)) with start: the guest never returns on its own.
+private let infiniteLoopModule = Data([
+  0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00,
+  0x01, 0x04, 0x01, 0x60, 0x00, 0x00,
+  0x03, 0x02, 0x01, 0x00,
+  0x08, 0x01, 0x00,
+  0x0A, 0x09, 0x01, 0x07, 0x00, 0x03, 0x40, 0x0C, 0x00, 0x0B, 0x0B,
+])
+
+// Imports "env"."f": the probe supplies no host imports, so instantiation must fail.
+private let hostImportModule = Data([
+  0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00,
+  0x01, 0x04, 0x01, 0x60, 0x00, 0x00,
+  0x02, 0x09, 0x01, 0x03, 0x65, 0x6E, 0x76, 0x01, 0x66, 0x00, 0x00,
+])
+
+@Test
+func deadlineTerminatesInfiniteLoopGuest() throws {
+  guard let root = ProcessInfo.processInfo.environment["SYNORA_WASMTIME_ROOT"] else { return }
+  let library = URL(fileURLWithPath: root).appendingPathComponent("lib/libwasmtime.dylib").path
+  let started = Date()
+  #expect(
+    !WasmtimeProbe.runStart(
+      module: infiniteLoopModule, library: library, under: root, deadlineNanos: 200_000_000))
+  let elapsed = Date().timeIntervalSince(started)
+  #expect(elapsed >= 0.2)
+  #expect(elapsed < 2.0)
+}
+
+@Test
+func cancelFlagTerminatesGuestWithin100Milliseconds() throws {
+  guard let root = ProcessInfo.processInfo.environment["SYNORA_WASMTIME_ROOT"] else { return }
+  let library = URL(fileURLWithPath: root).appendingPathComponent("lib/libwasmtime.dylib").path
+  let flag = UnsafeMutablePointer<Int32>.allocate(capacity: 1)
+  defer { flag.deallocate() }
+  flag.initialize(to: 0)
+  DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { flag.pointee = 1 }
+  let started = Date()
+  #expect(
+    !WasmtimeProbe.runStart(
+      module: infiniteLoopModule, library: library, under: root,
+      deadlineNanos: 10_000_000_000, cancelFlag: flag))
+  let elapsed = Date().timeIntervalSince(started)
+  #expect(elapsed >= 0.05)
+  #expect(elapsed < 1.0)
+}
+
+@Test
+func guestCannotResolveHostImportsOrExceedDeadline() throws {
+  guard let root = ProcessInfo.processInfo.environment["SYNORA_WASMTIME_ROOT"] else { return }
+  let library = URL(fileURLWithPath: root).appendingPathComponent("lib/libwasmtime.dylib").path
+  // No host imports are registered, so a guest that imports anything is rejected.
+  #expect(!WasmtimeProbe.runStart(module: hostImportModule, library: library, under: root))
+  // A valid guest with no deadline still completes.
+  let startModule = Data([
+    0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00,
+    0x01, 0x04, 0x01, 0x60, 0x00, 0x00,
+    0x03, 0x02, 0x01, 0x00,
+    0x08, 0x01, 0x00,
+    0x0A, 0x04, 0x01, 0x02, 0x00, 0x0B,
+  ])
+  #expect(WasmtimeProbe.runStart(module: startModule, library: library, under: root))
+}

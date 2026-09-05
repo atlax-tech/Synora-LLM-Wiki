@@ -12,6 +12,7 @@ final class SynoraAgentService: NSObject, NSXPCListenerDelegate, AgentServicePro
   private let lock = NSLock()
   private var active = Set<String>()
   private var cancelled = Set<String>()
+  private var cancelFlags: [String: UnsafeMutablePointer<Int32>] = [:]
 
   func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection)
     -> Bool
@@ -74,6 +75,7 @@ final class SynoraAgentService: NSObject, NSXPCListenerDelegate, AgentServicePro
     let accepted = active.contains(requestID)
     if accepted {
       cancelled.insert(requestID)
+      cancelFlags[requestID]?.pointee = 1
     }
     lock.unlock()
     reply(accepted)
