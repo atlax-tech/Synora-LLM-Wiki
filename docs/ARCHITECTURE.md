@@ -1,6 +1,6 @@
 # Synora Wiki 产品技术规格与技术选型
 
-文档版本：1.0
+文档版本：1.1
 状态：CONFIRMED（约定的目标架构；尚无原生实现，探针与 availability 未验证）
 对应产品版本：完整个人版
 原则：原生 Mac、本地优先、开放可迁移、AI 可替换、任何写入可审计
@@ -45,7 +45,7 @@ flowchart LR
   Companion[iPhone Companion] --> Sync
 ```
 
-架构采用单向依赖：界面依赖 Application Core，Core 依赖协议而非具体存储、模型或云服务。UI 不直接调用供应商 API、CloudKit 或文件系统。
+架构采用单向依赖：界面依赖 Application Core，Core 依赖协议而非具体存储、模型或云服务。UI 不直接调用供应商 API、CloudKit 或文件系统。保存、选区、停笔和查询由 Core 分派到现有用例；确定性任务直接执行，模型任务进入统一队列与权限链，不为每项功能建立独立 Agent。XPC 只承担隔离，不限定交互入口。
 
 ## 4. 技术选型
 
@@ -224,7 +224,7 @@ Markdown 使用稳定的 YAML front matter 和块 ID 注释保证往返；未知
 - `wiki`：LLM 维护的综合知识页，面向阅读与查询。
 - `rules`：用户和模型共同演进的 purpose/schema/policy，版本化并驱动 ingest/lint。
 
-实现遵循“先保存来源，再维护知识”的顺序，不用每次问答临时把所有原文塞入上下文。
+实现遵循“先保存来源，再维护知识”的顺序，不用每次问答临时把所有原文塞入上下文。`index` 由已提交页面元数据确定性生成，`log` 从操作事件投影；语义摘要由模型生成并受来源版本约束，模型不重写聚合目录或历史日志。
 
 ### 9.2 ingest pipeline
 
@@ -234,22 +234,25 @@ capture → normalize → chunk → extract → retrieve candidates
 → apply by risk policy → reindex → append log
 ```
 
-- 每一步按 `inputHash + rulesVersion + pipelineVersion` 建立幂等键。
-- 解析器、模型和提示词版本写入 provenance。
-- 大任务分片检查点；崩溃后从最近成功阶段恢复。
+- 每一步按来源 UUID/记录 ID、输入 revision/hash、rulesVersion 和阶段版本建立幂等键；阶段版本覆盖相关 parser/prompt/model 配置。只失效受变更影响的阶段及其下游，不全库重跑。
+- 缓存命中须校验产物存在、hash 与版本匹配；缺失/损坏进入修复，显式删除的产物遵守 tombstone，不因缓存修复复活。解析器、模型和提示词版本写入 provenance。
+- parser/chunker 输出正文、标题路径、页码或块定位、表格/代码边界与解析告警；解析不完整不能标记完整成功。保留原件，模型摘要不能替代精确来源。
+- 大任务按稳定分块建立检查点；崩溃后从最近成功阶段恢复。解析和模型准备有限并发，提交按库协调；短事务内重验 revision/权限及作业世代，冲突重新提案，取消或失败释放提交顺序，丢弃迟到结果。
 - 合并或改名不直接删除旧 slug，保留 alias 与历史引用。
 
 ### 9.3 query pipeline
 
-1. 解析时间、实体、媒体和来源过滤器。
-2. 并行执行 FTS、向量与关系候选检索。
-3. 混合排序，保留每项得分组成。
-4. 读取最小必要块，生成带 citation ID 的回答。
-5. 对引用做存在性与 quote hash 校验；未命中即明确未知。
+1. 解析时间、实体、媒体和来源过滤器；先应用库与对象权限。
+2. 知识页用于综合召回，原文索引用于精确事实与最新记录；并行执行可用的 FTS、向量与关系候选检索，不以模型整理完成为原文可查条件。
+3. 混合排序，保留得分组成；关系扩展限制跳数和候选数，并再次应用权限/时间过滤。算法候选见 U-009。
+4. 在统一上下文预算内读取最小必要证据块，生成带 citation ID 的回答；证据不足才扩大检索，达到预算仍不足则说明未知，不默认遍历全库。
+5. 对引用做存在性、revision 与 quote hash 校验；过期摘要回查原文。纯查找可直接返回命中记录，无需生成式调用。
 
 ### 9.4 lint pipeline
 
-固定检查包含断链、无引用事实、重复页、孤立页、schema 违规、过期摘要、互相矛盾的当前事实、无效 alias 与失败作业。自动修复仅限 L1/L2，L3 进入 Inbox Review。
+固定检查包含断链、无引用事实、重复页、孤立页、schema 违规、过期摘要、互相矛盾的当前事实、无效 alias 与失败作业。存在性、schema、链接和版本检查由确定性代码执行；语义重复、矛盾与过期判断使用模型。变更后只检查受影响对象及邻接关系，周期全量检查查漏。修复按风险进入提案；拒绝项仅在证据或规则版本变化后重新评估。
+
+来源移动/改名不改变 UUID。来源删除按 Citation/Relation 定位受影响知识并标记证据失效，不按文件名或子串级联删页；保留其他来源、humanOverride 与历史，修复走同一 Proposal/ChangeSet 链。恢复后重新验证引用，不复活已被用户删除的其他对象。
 
 ## 10. 搜索与索引
 
@@ -283,6 +286,10 @@ protocol LanguageModelProvider: Sendable {
 
 路由先检查任务所需能力、隐私策略、联网状态、预算和模型健康，再按用户优先级选择；不在代码中用供应商名称判断业务。
 
+连续编辑按记录合并待处理事件，只处理变化块及依赖；索引、格式规则和结构 lint 不调用模型。提取结果供摘要、标签、关联复用，复杂或校验失败任务才在预算内升级模型。输入法组合/连续输入不发起建议；选区或 revision 变化取消旧建议，拒绝后按规则冷却，不以停笔事件无限重试。
+
+上下文统一计入工具声明、规则、历史、检索块、工具结果与回答预留；adapter 使用 token 计数或标明误差的保守估算，不把字符数视为 token 数。超限先缩小上下文而非截断引用。稳定规则前缀可使用供应商支持的 prompt cache，缓存按版本与权限失效；不预设命中率或节省比例。诊断记录任务类别、调用次数、输入/输出/缓存用量与费用估计，不记录正文。
+
 ### 11.3 结构化写入
 
 - 所有知识修改都由模型输出 JSON Schema 对应的 `Proposal`，禁止让自由文本直接变成数据库命令。
@@ -302,6 +309,8 @@ protocol LanguageModelProvider: Sendable {
 ### 12.1 权限架构
 
 XPC Agent 只获取一次任务的最小上下文；它通过 capability broker 调用 `search`, `readBlocks`, `proposeChanges`, `export`, `photos`, `network` 等工具。只有主应用能提交 `ChangeSet`。
+
+个人画像复用 WikiPage、Relation、Citation 和 RuleSet，不另建独立记忆库。区分用户明确事实/偏好与模型推测，附来源 revision、有效时间及确认状态；显式纠正优先于推测，历史偏好保留时间边界。来源撤回/删除使相关画像及缓存失效；画像自身的删除通过 tombstone/规则抑制重建，停用后不进入上下文。跨设备和导出复用现有知识页/规则链。
 
 ### 12.2 Skill 包
 
@@ -396,7 +405,7 @@ HealthSummary target 在 iPhone 上请求细粒度 HealthKit 权限，把用户�
 ## 20. 参考资料
 
 - [A.I.-generated “LLM Wiki” concept — Andrej Karpathy](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
-- [nashsu/llm_wiki](https://github.com/nashsu/llm_wiki)：参考 ingest/query/lint、来源追踪与工具接口思想，不照搬 Tauri 架构。
+- [ADR-H002 方案细化](decisions/ADR-H002-agent-knowledge.md)：案例固定版本、采纳映射与实验边界；不照搬框架。
 - [Apple SwiftData and CloudKit compatibility](https://developer.apple.com/documentation/swiftdata/syncing-model-data-across-a-persons-devices)
 - [Apple CKSyncEngine](https://developer.apple.com/documentation/cloudkit/cksyncengine-4b4w9)
 - [Apple: deciding whether CloudKit is right for an app](https://developer.apple.com/documentation/cloudkit/deciding-whether-cloudkit-is-right-for-your-app)

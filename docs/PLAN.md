@@ -1,6 +1,6 @@
 # Synora Wiki 开发任务计划
 
-状态：NOT_STARTED；本轮仅工程治理初始化，不属于 P0 开发。
+状态：NOT_STARTED；方案细化不启动 P0–P9。
 
 本文件只定义任务与依赖。阶段目标见 [SPEC.md](SPEC.md)，流程见 [DEVELOPMENT.md](DEVELOPMENT.md)，测试见 [TESTING.md](TESTING.md)，验收见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 
@@ -71,9 +71,9 @@
 |---|---|---|---|
 | P3-01 | 实现 schema v1、迁移 runner 与事务仓储 | P0-05 | SynoraStore |
 | P3-02 | 实现 append-only Operation 与快照策略 | P3-01 | History engine |
-| P3-03 | 实现 Job queue、lease、checkpoint、retry/cancel | P3-01 | Durable jobs |
+| P3-03 | 实现 Job queue、lease、checkpoint、retry/cancel；事件合并、作业世代与按库提交协调 | P3-01 | Durable jobs |
 | P3-04 | 内容寻址附件、去重、垃圾回收与容量诊断 | P2-07, P3-01 | Asset store |
-| P3-05 | FTS5 schema、增量索引与结果高亮 | P3-01 | Local search |
+| P3-05 | FTS5 schema、增量索引与结果高亮；原文保存后独立索引 | P3-01 | Local search |
 | P3-06 | 中文 tokenizer 候选基准与选择 ADR | P3-05, P0-08 | Search ADR |
 | P3-07 | 时间/类型/标签/来源/媒体组合筛选 | P3-05 | Filter engine |
 | P3-08 | Synora 开放格式 materializer/parser | P3-01, P2-11 | Library format v1 |
@@ -94,10 +94,10 @@
 | P4-03 | Apple/system/local OpenAI-compatible adapter | P4-01 | Local adapters |
 | P4-04 | OpenAI/Anthropic/Gemini adapters | P4-01 | Cloud adapters |
 | P4-05 | model discovery、capability matrix 与 contract fixtures | P4-03/04 | Provider contracts |
-| P4-06 | task router、预算、隐私、健康状态和 fallback | P4-05 | Model routing |
+| P4-06 | 事件驱动 task router、统一上下文/费用预算、隐私、健康状态和 fallback | P4-05 | Model routing |
 | P4-07 | structured output decode；通用 revision/权限/风险校验及 ChangeSet 原子应用 | P4-01, P3-02 | Safe AI output；真实存储提交/撤销 |
 | P4-08 | diff/审批/provenance/撤销 UI | P4-07 | Review UI |
-| P4-09 | 行内 ghost text、stream、debounce、Tab/Esc/cancel | P2-02, P4-06 | Inline AI |
+| P4-09 | 行内 ghost text、排版建议、stream、debounce、Tab/Esc/cancel；取舍选项与拒绝冷却 | P2-02, P4-06 | Inline AI |
 | P4-10 | XPC Agent lifecycle、任务计划和 capability broker | P0-07, P4-06 | Agent service |
 | P4-11 | AI 作业恢复、限流、超时、重试和离线排队 | P3-03, P4-10 | Reliable AI jobs |
 | P4-12 | prompt/model/eval 版本与回归 harness | P4-05…11 | AI eval system |
@@ -111,18 +111,18 @@
 | ID | 任务 | 依赖 | 输出 |
 |---|---|---|---|
 | P5-01 | 实现 Raw/User/Wiki/Rules 数据边界与权限不变量 | P3-01 | Wiki domain |
-| P5-02 | purpose/schema/policy/index/log 与版本管理 | P5-01 | RuleSet v1 |
-| P5-03 | parser/chunker 插件接口与来源 provenance | P3-03, P5-01 | Normalize pipeline |
-| P5-04 | 实体/事实/主题/摘要结构 schema | P5-02 | Extraction schemas |
-| P5-05 | 候选页/关系召回与 Proposal 生成接口 | P5-04, P3-05, P4-01/06 | Proposal builder |
-| P5-06 | 在通用 validator 上接入 Wiki citation/schema 校验，复用 revision/权限检查 | P5-05, P4-07 | Wiki Proposal validator |
-| P5-07 | Wiki 风险策略接入 P4 ChangeSet 原子应用与撤销链 | P4-07/08, P5-06 | Wiki safe apply |
+| P5-02 | purpose/schema/policy 版本管理；确定性 index/log 投影 | P5-01 | RuleSet v1 |
+| P5-03 | parser/chunker 定位与结构保真契约、来源 provenance；U-010 解析器实验 | P3-03, P5-01 | Normalize pipeline |
+| P5-04 | 实体/事实/主题/摘要结构 schema；事实/偏好确认状态与有效时间 | P5-02 | Extraction schemas |
+| P5-05 | 候选页/关系召回与 Proposal 生成接口；U-008 调用拆分实验 | P5-04, P3-05, P4-01/06 | Proposal builder |
+| P5-06 | 在通用 validator 上接入 Wiki citation/schema、版本缓存与产物完整性校验，复用 revision/权限检查 | P5-05, P4-07 | Wiki Proposal validator |
+| P5-07 | Wiki 风险策略接入 P4 ChangeSet 原子应用与撤销链；提交前重验与迟到结果丢弃 | P4-07/08, P5-06 | Wiki safe apply |
 | P5-08 | embedding store、精确检索与模型版本重建 | P3-03, P3-05, P4-06 | Semantic index |
-| P5-09 | 混合 query、引用回答和命中解释 | P5-08, P5-06 | Query engine |
+| P5-09 | 知识页/原文双通路 query、预算内证据扩展与引用校验；U-009 排序实验 | P5-08, P5-06 | Query engine |
 | P5-10 | typed relations 与图谱数据查询 API | P5-05, P5-07 | Relation layer |
-| P5-11 | lint 检查、修复 Proposal 与 Inbox Review | P5-06…10 | Lint engine |
+| P5-11 | 确定性/语义 lint、来源失效传播、增量及周期检查、修复 Proposal 与 Inbox Review | P5-06…10 | Lint engine |
 | P5-12 | schema migration dry-run/rollback/alias | P5-02, P5-07 | Rule migration |
-| P5-13 | ingest/query/lint 固定语料 golden suite | 全部 | Wiki eval |
+| P5-13 | ingest/query/lint 固定语料、并发/删除/恢复场景；独立真实模型评测与实验裁决 | 全部 | Wiki eval |
 
 测试方法见 [TESTING.md](TESTING.md)，退出门槛见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 
@@ -180,8 +180,8 @@
 | P8-03 | 手帐年/月/主题视图与媒体叙事 | P2, P7 | Journal experience |
 | P8-04 | 主题/来源/相关内容页面和回链 | P5-09/10 | Knowledge browsing |
 | P8-05 | 周期总结、随机回顾、待办提取与频率控制 | P4, P5 | Reflection system |
-| P8-06 | AI 助手上下文卡片与结果保存 | P4, P8-04 | Assistant UX |
-| P8-07 | 用户接受/拒绝反馈形成 Rule Proposal | P5-12, P8-02 | Rule feedback |
+| P8-06 | 复用既有上下文卡片呈现相关记录、协作选项与结果保存 | P4, P8-04 | Assistant UX |
+| P8-07 | 用户接受/拒绝反馈形成 Rule Proposal；画像查看/纠正/停用/删除与个性化失效 | P5-12, P8-02 | Rule feedback 与画像闭环 |
 | P8-08 | 知识图谱需求、信息架构与视觉探索 | P5-10 | Graph design brief |
 | P8-09 | 图谱高保真原型、动效与可访问性规格 | P8-08 | Graph design contract |
 | P8-10 | ForceAtlas2/Barnes–Hut + Metal 技术探针 | P5-10 | Graph benchmark |

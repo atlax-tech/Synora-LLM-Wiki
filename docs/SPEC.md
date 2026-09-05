@@ -119,7 +119,7 @@
 - 内容寻址附件、缩略图、去重、校验和容量诊断。
 - FTS5 索引、中文 tokenizer 评测、过滤器、结果高亮。
 - Synora 开放库格式、全量/增量备份、导入导出和恢复工具。
-- durable job queue、checkpoint、重试、取消与后台资源调度。
+- durable job queue、checkpoint、重试、取消、事件合并与提交协调；原文索引不等待 AI。
 - Trash/tombstone、历史保留和数据完整性检查。
 
 ### 交付物
@@ -143,9 +143,9 @@
 - `LanguageModelProvider`、capability matrix、stream、structured output、embedding、token estimate。
 - Apple 系统/本地模型、OpenAI-compatible、OpenAI、Anthropic、Gemini adapters。
 - Keychain BYOK、连接测试、模型发现、路由、预算和隐私策略。
-- 轻量任务路由、深度任务路由、离线排队与故障切换。
+- 事件驱动轻量/深度任务路由、统一上下文与费用预算、结果复用、离线排队与故障切换。
 - 通用 Proposal/ChangeSet 契约、revision/权限/风险 validator、diff、审批、原子应用与撤销；基于 P3 真实存储交付。Wiki citation/schema 扩展在 P5 接入，不反向依赖 P5。
-- 行内 ghost text、选区改写、Tab/Esc、取消和 debounce。
+- 行内 ghost text、选区改写、排版建议、取舍选项、Tab/Esc、取消和 debounce；沿用设计，不抢焦点。
 - XPC Agent sidecar：计划、检索、工具调用、暂停/恢复/取消。
 - Prompt/model/eval 版本与回归数据集；至少一条真实 provider → 提案 → 审阅 → 提交 → 撤销链，不能以模拟响应验收。
 
@@ -168,17 +168,17 @@
 ### 范围
 
 - Raw/User/Wiki/Rules 分层和 `purpose/schema/policy/index/log`。
-- ingest pipeline：解析、分块、实体/事实/主题提取、候选召回、提案、引用验证、应用、索引。
-- query pipeline：FTS+向量+关系混合检索，带块级引用回答。
-- lint pipeline：断链、重复、孤立、矛盾、无引用、过期、schema 违规。
+- ingest pipeline：保真解析与分块定位、实体/事实/主题提取、候选召回、提案、版本/产物/引用验证与协调提交。
+- query pipeline：知识页与原文双通路混合检索，预算内渐进读取证据，带块级引用回答。
+- lint pipeline：确定性与语义检查分离，覆盖断链、重复、孤立、矛盾、无引用、过期、schema 违规和来源失效。
 - 规则版本、迁移 dry-run、影响预览、回滚和 alias。
-- 用户反馈形成规则建议。
+- 用户反馈形成规则建议；事实/偏好带来源、时间和确认状态，为 P8 画像闭环提供数据契约。
 - embedding、关系索引和未来图谱的数据 API。
 
 ### 交付物
 
 - `SynoraWikiEngine`、向量索引与 relation schema。
-- 基于固定语料的 ingest/query/lint goldens。
+- 基于固定语料的 ingest/query/lint goldens；U-008～010 仅为实验候选，采用须满足 TESTING 协议，不提前锁定调用次数、算法或解析依赖。
 - provenance viewer 与 Inbox Review 数据模型。
 
 ### 退出门槛
@@ -245,7 +245,7 @@
 
 - 首页、今日、收件箱、周期回顾、随机回顾、旅行/生活/日常/灵感手帐视图。
 - 相关笔记、相关照片、主题页、来源页、AI 问答与 Inbox Review。
-- 自动结构维护的可解释摘要与轻量规则反馈。
+- 自动结构维护的可解释摘要、轻量规则反馈与可纠正个人画像；在既有知识页/审阅入口完成，不新增画像界面。
 - **知识图谱独立设计阶段**：信息密度、节点/边、聚类、筛选、搜索、路径、时间、缩放、选择、无障碍。
 - 图谱技术探针：后台 ForceAtlas2/Barnes–Hut，Metal 渲染，10k/100k 节点性能。
 - 仅当高保真设计、动效和性能同时过门，才实现并启用图谱产品 UI。
