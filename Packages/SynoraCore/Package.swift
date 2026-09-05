@@ -9,6 +9,8 @@ let package = Package(
     .library(name: "SynoraPlatform", targets: ["SynoraPlatform"]),
     .library(name: "SynoraStoreProbe", targets: ["SynoraStoreProbe"]),
     .library(name: "SynoraSkillProbe", targets: ["SynoraSkillProbe"]),
+    .library(name: "SynoraBenchmark", targets: ["SynoraBenchmark"]),
+    .executable(name: "SynoraBenchmarkGenerator", targets: ["SynoraBenchmarkGenerator"]),
     .executable(name: "SynoraPlatformProbe", targets: ["SynoraPlatformProbe"])
   ],
   dependencies: [
@@ -23,10 +25,13 @@ let package = Package(
     ),
     .target(name: "CWasmtimeShim", publicHeadersPath: "include"),
     .target(name: "SynoraSkillProbe", dependencies: ["CWasmtimeShim"]),
+    .target(name: "SynoraBenchmark"),
+    .executableTarget(name: "SynoraBenchmarkGenerator", dependencies: ["SynoraBenchmark"]),
     .executableTarget(name: "SynoraPlatformProbe", dependencies: ["SynoraPlatform"]),
     .testTarget(name: "SynoraDomainTests", dependencies: ["SynoraDomain"]),
     .testTarget(name: "SynoraPlatformTests", dependencies: ["SynoraPlatform"]),
     .testTarget(name: "SynoraStoreProbeTests", dependencies: ["SynoraStoreProbe"]),
-    .testTarget(name: "SynoraSkillProbeTests", dependencies: ["SynoraSkillProbe"])
+    .testTarget(name: "SynoraSkillProbeTests", dependencies: ["SynoraSkillProbe"]),
+    .testTarget(name: "SynoraBenchmarkTests", dependencies: ["SynoraBenchmark"])
   ]
 )
