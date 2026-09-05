@@ -4,5 +4,8 @@
 node_modules/
 .pnpm-store/
 .DS_Store
+.build/
+*.xcresult
+*.trace
 __pycache__/
 *.pyc

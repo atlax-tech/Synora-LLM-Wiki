@@ -5,9 +5,12 @@ let package = Package(
   name: "SynoraCore",
   platforms: [.macOS("26.0")],
   products: [
+    .library(name: "SynoraPlatform", targets: ["SynoraPlatform"]),
     .executable(name: "SynoraPlatformProbe", targets: ["SynoraPlatformProbe"])
   ],
   targets: [
-    .executableTarget(name: "SynoraPlatformProbe")
+    .target(name: "SynoraPlatform"),
+    .executableTarget(name: "SynoraPlatformProbe", dependencies: ["SynoraPlatform"]),
+    .testTarget(name: "SynoraPlatformTests", dependencies: ["SynoraPlatform"])
   ]
 )
