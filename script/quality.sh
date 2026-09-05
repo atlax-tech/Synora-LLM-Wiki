@@ -27,7 +27,7 @@ xcrun swift-format lint --recursive --parallel --strict \
 
 swift build --package-path Packages/SynoraCore --scratch-path "$artifact_dir/swiftpm-build"
 swift test --package-path Packages/SynoraCore --scratch-path "$artifact_dir/swiftpm-test" \
-  --enable-code-coverage | tee "$artifact_dir/swift-test.log"
+  --skip SynoraStoreHeavyTests --enable-code-coverage | tee "$artifact_dir/swift-test.log"
 
 profdata=$(find "$artifact_dir/swiftpm-test" -name default.profdata -print -quit)
 test_binary=$(find "$artifact_dir/swiftpm-test" -path '*SynoraCorePackageTests.xctest/Contents/MacOS/SynoraCorePackageTests' -print -quit)
@@ -65,6 +65,15 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=YES \
   build | tee "$artifact_dir/xcode-build-probes.log"
 
+# Register the probe host under a stable path so LaunchServices can resolve it.
+probe_host_dir="$HOME/Library/Caches/SynoraProbeHost"
+probe_host_app="$probe_host_dir/SynoraP0Probes.app"
+mkdir -p "$probe_host_dir"
+rm -rf "$probe_host_app"
+cp -R "$derived_data/Probes/Build/Products/Debug/SynoraP0Probes.app" "$probe_host_app"
+lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+"$lsregister" -f "$probe_host_app"
+
 xcodebuild \
   "${xcode_container[@]}" \
   -scheme SynoraWiki \
@@ -76,6 +85,28 @@ xcodebuild \
   test | tee "$artifact_dir/xcode-test.log"
 
 release_app="$derived_data/Release/Build/Products/Release/SynoraWiki.app"
+
+# XPC + real guest end-to-end: launch the probe host and check its fixture report.
+# The sandboxed app services are invisible to external processes, so the host runs
+# the fixture itself and persists the outcome in its container temp directory.
+fixture_report="$HOME/Library/Containers/tech.atlax.SynoraWiki.P0Probes/Data/tmp/synora-xpc-fixture.json"
+rm -f "$fixture_report"
+open "$probe_host_app"
+fixture_ok=false
+for _ in {1..30}; do
+  if [[ -f "$fixture_report" ]] && grep -q '"status" *: *"success"' "$fixture_report"; then
+    fixture_ok=true
+    break
+  fi
+  sleep 1
+done
+for pid in $(pgrep -f "$probe_host_app" || true); do kill "$pid" 2>/dev/null || true; done
+if [[ "$fixture_ok" != true ]]; then
+  print -u2 "XPC guest fixture did not succeed: $(cat "$fixture_report" 2>/dev/null || echo 'no report')"
+  exit 1
+fi
+print "xpc guest fixture succeeded: $(cat "$fixture_report")"
+
 codesign --verify --deep --strict "$release_app"
 bundle_id=$(plutil -extract CFBundleIdentifier raw -o - "$release_app/Contents/Info.plist")
 [[ "$bundle_id" == "tech.atlax.SynoraWiki" ]]

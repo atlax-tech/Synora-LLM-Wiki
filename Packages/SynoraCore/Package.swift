@@ -28,9 +28,11 @@ let package = Package(
     .target(name: "SynoraBenchmark"),
     .executableTarget(name: "SynoraBenchmarkGenerator", dependencies: ["SynoraBenchmark"]),
     .executableTarget(name: "SynoraPlatformProbe", dependencies: ["SynoraPlatform"]),
+    .executableTarget(name: "SynoraStoreCrashWriter", dependencies: ["SynoraStoreProbe"]),
     .testTarget(name: "SynoraDomainTests", dependencies: ["SynoraDomain"]),
     .testTarget(name: "SynoraPlatformTests", dependencies: ["SynoraPlatform"]),
     .testTarget(name: "SynoraStoreProbeTests", dependencies: ["SynoraStoreProbe"]),
+    .testTarget(name: "SynoraStoreHeavyTests", dependencies: ["SynoraStoreProbe"]),
     .testTarget(name: "SynoraSkillProbeTests", dependencies: ["SynoraSkillProbe"]),
     .testTarget(name: "SynoraBenchmarkTests", dependencies: ["SynoraBenchmark"])
   ]

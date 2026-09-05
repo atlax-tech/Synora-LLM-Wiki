@@ -60,13 +60,44 @@ func replayRestoresProjectionAndRejectsCorruptLogAtomically() throws {
   #expect(try store.latestSnapshot() == oldSnapshot)
   let latest = try store.record(id: id)
   try database.write { db in try db.execute(sql: "DELETE FROM records") }
-  try store.replayRecords()
+  try store.replayProjection()
   #expect(try store.record(id: id) == latest)
   #expect(expected?.revision == 100)
   #expect(try store.operationCount() == 101)
   try database.write { db in
     try db.execute(sql: "UPDATE operations SET hash = 'damaged' WHERE sequence = 50")
   }
-  #expect(throws: StoreError.invalidOperation) { try store.replayRecords() }
+  #expect(throws: StoreError.invalidOperation) { try store.replayProjection() }
   #expect(try store.record(id: id) == latest)
+}
+
+@Test
+func blockAndAssetProjectionRoundTripsThroughReplayAndRecovery() throws {
+  let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
+  defer { try? FileManager.default.removeItem(atPath: path) }
+  let store = try StoreProbe(path: path)
+  let recordID = UUID()
+  try store.save(Record(id: recordID, title: "宿主记录", revision: 0))
+  let blockID = UUID()
+  try store.saveBlock(Block(id: blockID, recordID: recordID, position: 0, text: "首块"))
+  #expect(try store.block(id: blockID)?.revision == 1)
+  try store.saveBlock(Block(id: blockID, recordID: recordID, position: 1, text: "移动", revision: 1))
+  #expect(try store.block(id: blockID)?.position == 1)
+  let assetID = UUID()
+  try store.importAsset(Asset(id: assetID, contentHash: "abc", byteCount: 3))
+  #expect(try store.importAsset(Asset(id: assetID, contentHash: "abc", byteCount: 3)) != nil)
+  #expect(throws: StoreError.operationConflict) {
+    try store.importAsset(Asset(id: assetID, contentHash: "different", byteCount: 9))
+  }
+  #expect(throws: StoreError.missingRecord) {
+    try store.saveBlock(Block(id: UUID(), recordID: UUID(), position: 0, text: "孤儿"))
+  }
+  let expected = try store.projectionHash()
+  try store.replayProjection()
+  #expect(try store.projectionHash() == expected)
+  _ = try store.snapshot()
+  #expect(try store.recoverFromSnapshot() != nil)
+  #expect(try store.projectionHash() == expected)
+  try store.deleteBlock(id: blockID, revision: 2)
+  #expect(try store.block(id: blockID) == nil)
 }

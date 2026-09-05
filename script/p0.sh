@@ -19,6 +19,8 @@ run_textkit() {
 run_store() {
   swift test --package-path "$root_dir/Packages/SynoraCore" \
     --scratch-path "$scratch_path" --filter SynoraStoreProbeTests
+  swift test --package-path "$root_dir/Packages/SynoraCore" \
+    --scratch-path "$scratch_path" --filter SynoraStoreHeavyTests
 }
 
 run_skill() {
