@@ -77,7 +77,10 @@ func blockAndAssetProjectionRoundTripsThroughReplayAndRecovery() throws {
   defer { try? FileManager.default.removeItem(atPath: path) }
   let store = try StoreProbe(path: path)
   let recordID = UUID()
-  try store.save(Record(id: recordID, title: "宿主记录", revision: 0))
+  // The sentinel flows through the store like real user content; the quality gate
+  // asserts it never surfaces in logs, build artifacts or release bundles.
+  try store.save(
+    Record(id: recordID, title: "宿主记录 SYNORA-SENTINEL-CONTENT-20260905", revision: 0))
   let blockID = UUID()
   try store.saveBlock(Block(id: blockID, recordID: recordID, position: 0, text: "首块"))
   #expect(try store.block(id: blockID)?.revision == 1)

@@ -107,6 +107,26 @@ if [[ "$fixture_ok" != true ]]; then
 fi
 print "xpc guest fixture succeeded: $(cat "$fixture_report")"
 
+# Sentinel scan: planted test content and the reserved secret marker must never
+# reach logs, xcresults, entitlements or the release bundle. Test sources embed the
+# content sentinel by design, so build intermediates are not scanned.
+sentinel_hits=$(
+  {
+    grep -rao -f <(printf 'SYNORA-SENTINEL-CONTENT-20260905\nSYNORA-SENTINEL-SECRET-20260905\n') \
+      "$artifact_dir"/*.log "$artifact_dir"/SynoraWiki.xcresult \
+      "$artifact_dir"/release-entitlements.plist "$fixture_report" 2>/dev/null || true
+    log show --last 20m --style compact \
+      --predicate 'processImagePath CONTAINS[c] "Synora"' 2>/dev/null \
+      | grep -ao 'SYNORA-SENTINEL-\(CONTENT\|SECRET\)-20260905' || true
+    grep -rao 'SYNORA-SENTINEL-\(CONTENT\|SECRET\)-20260905' "$release_app" 2>/dev/null || true
+  } | sort -u
+)
+[[ -z "$sentinel_hits" ]] || {
+  print -u2 "sentinel leak detected: $sentinel_hits"
+  exit 1
+}
+print "sentinel scan clean"
+
 codesign --verify --deep --strict "$release_app"
 bundle_id=$(plutil -extract CFBundleIdentifier raw -o - "$release_app/Contents/Info.plist")
 [[ "$bundle_id" == "tech.atlax.SynoraWiki" ]]
