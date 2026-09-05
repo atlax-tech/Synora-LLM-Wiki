@@ -1,30 +1,49 @@
-# P0 受管文档收口提案
+# P0 受管文档同步提案
 
-提案版本：`P0-CLOSURE-PROPOSAL-20260906-v1`
+提案版本：`P0-CLOSURE-PROPOSAL-20260906-v2`
 
-质量证据绑定的源码 HEAD：`1ddd1ab`（补充 store idempotency test；benchmark determinism fix 在其祖先 `3a5b466`）；本文件是 Harness `harness-update` 的只读提案，不是授权，也不把 P0 标为完成。
+本提案是 Harness `harness-update` Phase A 的只读结果。输入绑定源码 HEAD `771d773aabeef344dedf4a569739d4ed5892c7c5`；任何下列输入哈希或源码 HEAD 变化都会使批准失效。
 
 ## 已确认事实
 
-- P0-01 至 P0-05、P0-07、P0-08 已有独立小步提交；P0-06 只有负向检查，P0-09 threat model、P0-10 六份 ADR 草案与 traceability/feasibility 文档已提交。
-- 本机 `script/quality.sh` 默认 workspace 路径在 HEAD `1ddd1ab` 通过：SwiftPM 8 tests、覆盖率总行 92.64%、Xcode Debug/Release build、XCTest、XCUITest、ad-hoc 签名检查；编译缓存定向到 `/private/tmp`，产物目录为 `/private/tmp/synora-wiki-quality-p0-head-1ddd1ab`。
-- `script/p0.sh benchmark` 的 smoke profile 两目录逐文件比较与 `--resume` SHA-256 比对通过；full 10k/100k/20 GiB profile 未运行。
-- TextKit 2 IME/attachment/undo/VoiceOver/performance、SQLite 故障注入、真实 Wasm 隔离/取消/崩溃、完整 benchmark、sentinel 日志扫描和独立清洁 clone 检查仍未完成。
+- `script/quality.sh` 在 `/private/tmp/synora-wiki-quality-a7c3fc4` 通过：11 个 Swift Testing tests、总行覆盖率 93.53%、正式应用 Debug/Release、probe host 与嵌入 XPC 集成构建、XCTest、XCUITest、签名和 entitlement 检查。
+- probe 集成日志确认 `SynoraAgentServiceProbe` 链接本地 `SynoraSkillProbe`，再嵌入 `SynoraP0Probes.app`。
+- P0 仍是 `CHANGES_REQUIRED`：真实 TextKit IME/attachment/VoiceOver/延迟、100k store replay 与故障注入、真实 Wasmtime guest/capability callback/隔离矩阵、20 GiB full corpus、sentinel 扫描、清洁 clone 与远端 CI 均未完成。
+- `validate_manifest.py` 通过。`detect_drift.py` 报告 5 项既有 drift：`.gitignore`、`AGENTS.md`、`ADR-H001`、初始化日志，以及 `ADR-H001` 的 source fingerprint。
 
-## 建议的受管文件变更（需另行明确批准）
+## 输入哈希
 
-| 文件 | 建议 | 状态 |
+| 文件 | SHA-256 |
+| --- | --- |
+| `AGENTS.md` | `1200e070068e80f5fdec188d22b5a0ea2b0314ef81d1ea24498b2e005ee817ed` |
+| `docs/PLAN.md` | `814c0c87749f7050a1089f6363b61e55e04fecc07e614f6b4033ea7c43edf96b` |
+| `docs/SPEC.md` | `4bb33fb3695b708d61d24ae1163909d3c4fa0454c9c03c6b5a96db21e1d82cda` |
+| `docs/ACCEPTANCE.md` | `c86eff67d0cb6469788a25f4747eaa73a2a00118bf9576c79a0a362dc509cd14` |
+| `docs/decisions/INDEX.md` | `7e4a78669bf3b1245eae70cd7e3590c53ef7de2118fb401038bd6c3d571bc6c5` |
+| `.harness/manifest.json` | `83276af5effac7aee90a54359f4c555fedeaf72ce61a38ba29d714e9503e75a7` |
+| `.harness/source-index.json` | `65302097ea335ad57c7cdce15b8a6135a9df2a150d759a512c136004fbfea828` |
+| `.harness/unresolved.json` | `64105010cdccabe374c58e2763bd58f67b4db0e2eda34cc64b9b7f39f0b3ad6b` |
+
+## 文件级同步计划
+
+| 文件 | 拟议变更 | 分类 |
 | --- | --- | --- |
-| `AGENTS.md` | 将阶段事实从“P0–P9 未启动”改为“P0 执行中，出口 `CHANGES_REQUIRED`”，保留所有边界规则 | `MANUAL_DECISION` |
-| `docs/PLAN.md` | 仅更新顶层/ P0 状态与实际提交证据，不改任务范围、依赖或 DEFERRED 语义 | `SAFE_MANAGED_UPDATE` |
-| `docs/SPEC.md` | 仅更新 P0 状态和已知限制，保留交付物及退出门槛 | `SAFE_MANAGED_UPDATE` |
-| `docs/ACCEPTANCE.md` | 记录 P0 当前 `CHANGES_REQUIRED` 与未运行门槛，不降低标准 | `SAFE_MANAGED_UPDATE` |
-| `docs/development-log/2026-09-05-p0.md` | 按日志规范追加本轮真实命令、HEAD、提交、限制和人工步骤 | `SAFE_MANAGED_UPDATE` |
-| `docs/decisions/INDEX.md` | 登记 ADR-001…006 草案状态及链接，不标 `ACCEPTED` | `SAFE_MANAGED_UPDATE` |
-| `.harness/manifest.json`, `.harness/source-index.json`, `.harness/unresolved.json` | 在上述文件批准后刷新受管基线和未决证据 | `SAFE_MANAGED_UPDATE` |
+| `AGENTS.md` | 将“P0–P9 均未启动”改为“P0 执行中，当前出口 CHANGES_REQUIRED；P1–P9 未启动”，不改边界规则 | `SAFE_MANAGED_UPDATE` |
+| `docs/PLAN.md` | 在 P0 表前记录当前状态、源码 HEAD、已通过自动门与未完成出口；不改变 P0-01…10 的范围或依赖 | `SAFE_MANAGED_UPDATE` |
+| `docs/SPEC.md` | 在 P0 节记录工程/探针已实现但完整风险矩阵未通过；不降低交付物 | `SAFE_MANAGED_UPDATE` |
+| `docs/ACCEPTANCE.md` | 在 P0 验收处记录 `CHANGES_REQUIRED` 和未运行门；不把局部探针提升为 PASS | `SAFE_MANAGED_UPDATE` |
+| `docs/decisions/INDEX.md` | 登记 ADR-001…006 为 `PROPOSED` 并链接现有文件 | `SAFE_MANAGED_UPDATE` |
+| `docs/development-log/2026-09-06-p0.md` | 新建中文日志，记录实际 HEAD、命令、退出码、artifact、限制和人工验收步骤 | `SAFE_MANAGED_UPDATE` |
+| `.harness/manifest.json` | 增加新日志，刷新上述获批受管文件哈希及 state 链接；保留 user/observed ownership | `SAFE_MANAGED_UPDATE` |
+| `.harness/source-index.json` | 将 P0 实现、测试、ADR 和证据路径加入事实索引，状态保持 `CHANGES_REQUIRED` | `SAFE_MANAGED_UPDATE` |
+| `.harness/unresolved.json` | 仅同步 U-001/U-004/U-007 的现有 P0 证据与剩余缺口，不改 unresolved 状态 | `SAFE_MANAGED_UPDATE` |
 
-不建议本次修改 PRODUCT、DESIGN、ARCHITECTURE 或 `UNRESOLVED.md` 的要求/选型正文；六份 ADR 草案已把未决项和证据边界单独记录。若用户要改变这些受管源文件，需另建提案并保留冲突。
+以下既有 drift 不在本提案中改正文或刷新 baseline：`.gitignore`、`docs/decisions/ADR-H001-initialization.md`、`docs/development-log/2026-09-05-initialization.md`。它们保持 `USER_EDIT_CONFLICT`，需独立核对来源后另行提案。`PRODUCT`、`DESIGN`、`ARCHITECTURE`、`TESTING`、`UNRESOLVED.md` 均为 `NO_CHANGE`。
 
-## 需要的授权
+## 验证与回滚
 
-请明确批准提案版本 `P0-CLOSURE-PROPOSAL-20260906-v1` 的上述文件范围，或只批准其中列出的具体文件。批准前不执行受管文件、Harness 指纹或开发日志写入。
+获批后先复核 HEAD 和全部输入哈希，再只改批准文件；运行 manifest、Harness structure、references、drift、`git diff --check` 和统一质量门。若验证失败，只恢复本次 Phase B 中字节仍未被并发修改的文件，并保留原始失败输出。现有 `USER_EDIT_CONFLICT` drift 会继续显式报告。
+
+## 授权门
+
+Phase B 需要用户明确批准 `P0-CLOSURE-PROPOSAL-20260906-v2` 及表中具体文件范围。批准只授权同步为“P0 执行中 / CHANGES_REQUIRED”，不授权关闭 P0、启动 P1、改变要求、推送或发布。

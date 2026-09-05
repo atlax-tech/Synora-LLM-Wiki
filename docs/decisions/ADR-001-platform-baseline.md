@@ -12,7 +12,7 @@
 
 - `Config/Base.xcconfig` 将探针部署目标设为 macOS 26.0、架构设为 arm64。
 - `App/SynoraP0ProbesApp.swift` 在可用 SDK 和 macOS 26.0 上读取 `SystemLanguageModel.default.isAvailable`，否则显示明确的不可用状态。
-- `script/quality.sh` 默认 workspace 路径的 Debug/Release 工程构建、SwiftPM 测试和 XCUITest 在本机通过（编译缓存定向到 `/private/tmp`）；未运行多设备/地区矩阵。
+- `script/quality.sh` 默认 workspace 路径的正式应用 Debug/Release、probe/XPC 集成构建、SwiftPM 测试和 XCUITest 在本机通过（产物定向到 `/private/tmp`）；未运行多设备/地区矩阵。
 
 ## 取舍与回滚
 
