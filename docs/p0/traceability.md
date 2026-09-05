@@ -11,6 +11,6 @@
 | P0-07 | epoch-interruption deadline + cancel in shim, service enforces both, XPC end-to-end fixture | `script/p0.sh skill` exit 0 (8/8: real guest, 200 ms deadline traps infinite loop, cancel ≤100 ms, host imports rejected, bounds enforced); `script/quality.sh` XPC fixture `{"status":"success"}` | capability callback broker and active-abort/reconnect drill remain `NOT_RUN` |
 | P0-08 | deterministic smoke/full generator | full corpus at seed 20260905: exact 10k/100k/20 GiB, manifest hashes verified, TIFF opens via `sips`, tamper detected; smoke determinism + resume via `script/p0.sh benchmark` | none dataset-specific |
 | P0-09 | threat model, classifications, sentinel scan | `script/quality.sh` sentinel scan clean over logs/xcresult/entitlements/release bundle (content sentinel planted in test data, secret sentinel reserved) | dependency license review is documentation-level |
-| P0-10 | ADR drafts and closure proposal | governance checks | independent clean-clone test/review and managed-doc approval pending |
+| P0-10 | ADR drafts and closure proposal | governance checks; independent test (clean clone, 34/0 pass) and independent review passed; review's ADR fixes applied at `93f47ad` | managed-doc approval, real IME/VoiceOver gates and remote CI pending |
 
 The table intentionally records `NOT_RUN` work instead of promoting scaffolding to a phase pass. The phase cannot close before the human IME/VoiceOver gates, the capability-callback decision, independent test/review and remote CI pass.
