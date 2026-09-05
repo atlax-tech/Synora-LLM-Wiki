@@ -1,5 +1,7 @@
 # Synora Wiki 开发任务计划
 
+适用范围以 [PRODUCT §5.3](PRODUCT.md#53-当前服务与交付边界) 为准；DEFERRED 项不进入任何已规划阶段的依赖、完成率或退出门槛，不记为 BLOCKED，不要求 Apple 开发者账号。
+
 状态：NOT_STARTED；方案细化不启动 P0–P9。
 
 本文件只定义任务与依赖。阶段目标见 [SPEC.md](SPEC.md)，流程见 [DEVELOPMENT.md](DEVELOPMENT.md)，测试见 [TESTING.md](TESTING.md)，验收见 [ACCEPTANCE.md](ACCEPTANCE.md)。
@@ -15,11 +17,11 @@
 | P0-03 | 定义 Domain entities、Repository/Clock/ID/Transaction 协议 | P0-01 | `SynoraDomain` v0 |
 | P0-04 | TextKit 2 探针：IME、block ranges、attachment、undo、VoiceOver | P0-01 | 编辑器可行性报告 |
 | P0-05 | GRDB WAL、operation log、snapshot/replay 探针 | P0-03 | 存储可行性报告 |
-| P0-06 | CKSyncEngine 两设备/模拟器、离线和冲突探针 | P0-05 | 同步可行性报告 |
+| P0-06 | DEFERRED：原 CKSyncEngine 同步探针，恢复需用户重新决策 | 无（移出依赖图） | 不开发、不验收、不阻塞 |
 | P0-07 | XPC + WASI Skill 权限、崩溃、取消探针 | P0-01 | 隔离可行性报告 |
 | P0-08 | 生成 10k records/100k blocks/20 GB media 基准库 | P0-03 | 固定 seed 测试数据 |
 | P0-09 | 建立 threat model、数据分类和日志策略 | P0-03 | 安全文档 |
-| P0-10 | 完成 ADR-001…006 并冻结主要技术路线 | P0-04…09 | 审批后的 ADR |
+| P0-10 | 完成 ADR-001…006 并冻结主要技术路线 | P0-04/05/07/08/09 | 审批后的适用 ADR；原同步 ADR 仅记录暂缓决策 |
 
 测试方法见 [TESTING.md](TESTING.md)，退出门槛见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 
@@ -147,25 +149,25 @@
 
 测试方法见 [TESTING.md](TESTING.md)，退出门槛见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 
-## P7 — Apple 生态与多设备同步
+## P7 — macOS 本地上下文与公开服务
 
 ### 任务拆分
 
 | ID | 任务 | 依赖 | 输出 |
 |---|---|---|---|
-| P7-01 | CloudKit schema/custom zones/CKRecord mapping | P0-06, P3-01 | Sync schema v1 |
-| P7-02 | CKSyncEngine state、pending changes、push/pull | P7-01 | Sync engine |
-| P7-03 | Operation 去重、乱序、tombstone 与 asset 分片 | P7-02, P3-02/04 | Reliable replication |
-| P7-04 | Block/field merge 与 Conflict Review | P7-03, P2-01 | Conflict resolver |
-| P7-05 | 新设备 bootstrap、账户切换和同步诊断 | P7-02…04 | Sync UX |
+| P7-01 | DEFERRED：原 CloudKit schema，恢复需用户重新决策 | 无（移出依赖图） | 不开发、不验收、不阻塞 |
+| P7-02 | DEFERRED：原 CKSyncEngine，恢复需用户重新决策 | 无（移出依赖图） | 不开发、不验收、不阻塞 |
+| P7-03 | DEFERRED：跨设备复制，恢复需用户重新决策 | 无（移出依赖图） | 不开发、不验收、不阻塞 |
+| P7-04 | DEFERRED：跨设备合并与 Conflict Review，恢复需用户重新决策 | 无（移出依赖图） | 不开发、不验收、不阻塞 |
+| P7-05 | DEFERRED：同步诊断与账户切换，恢复需用户重新决策 | 无（移出依赖图） | 不开发、不验收、不阻塞 |
 | P7-06 | Photos 授权、相关候选和原件导入 | P2-08 | Photos integration |
 | P7-07 | MapKit 地点、精度控制和地图卡片 | P2-10 | Location integration |
-| P7-08 | WeatherKit 快照与 attribution | P7-07 | Weather integration |
-| P7-09 | MusicKit 授权、曲目引用和播放候选 | P2-10 | Music integration |
+| P7-08 | CoreLocation + Open-Meteo 天气快照、隐私与 attribution | P7-07 | Weather integration |
+| P7-09 | 自有 Music Picker、iTunes Search/Lookup、分享链接转 MusicBlock、外部打开 | P2-10 | Music integration |
 | P7-10 | Share Extension/Services/App Intents/Spotlight | P3-01/05 | System entry points |
-| P7-11 | iPhone 快速采集与分享 companion | P7-01/02 | Companion app |
-| P7-12 | iPhone HealthKit 摘要选择、转换和同步 | P7-11, P7-03 | Health bridge |
-| P7-13 | 双设备 72h 离线/并发/大附件/权限矩阵 | 全部 | Device validation |
+| P7-11 | DEFERRED：iPhone 采集伴侣，恢复需用户重新决策 | 无（移出依赖图） | 不开发、不验收、不阻塞 |
+| P7-12 | DEFERRED：iPhone 健康桥接，恢复需用户重新决策 | 无（移出依赖图） | 不开发、不验收、不阻塞 |
+| P7-13 | Mac 音乐/天气/照片/地点/系统入口真实集成、离线与权限矩阵 | P7-06…10 | 本地集成验证；不含 DEFERRED 项 |
 
 测试方法见 [TESTING.md](TESTING.md)，退出门槛见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 
@@ -176,7 +178,7 @@
 | ID | 任务 | 依赖 | 输出 |
 |---|---|---|---|
 | P8-01 | 首页/今日聚合与轻量回顾策略 | P5, P7 | Home/Today |
-| P8-02 | Inbox Review：失败、低置信、冲突、提案 | P5-11, P4-08, P7-04 | Review center |
+| P8-02 | Inbox Review：失败、低置信、冲突、提案 | P5-11, P4-08 | Review center |
 | P8-03 | 手帐年/月/主题视图与媒体叙事 | P2, P7 | Journal experience |
 | P8-04 | 主题/来源/相关内容页面和回链 | P5-09/10 | Knowledge browsing |
 | P8-05 | 周期总结、随机回顾、待办提取与频率控制 | P4, P5 | Reflection system |
@@ -198,13 +200,13 @@
 |---|---|---|---|
 | P9-01 | 建立 FR→SPEC→PLAN→Test traceability 全表 | P0–P8 | Coverage matrix |
 | P9-02 | 全量回归、随机长期运行和 soak test | P0–P8 | Stability report |
-| P9-03 | 启动/输入/内存/能耗/搜索/同步优化 | P9-02 | Performance report |
+| P9-03 | 启动/输入/内存/能耗/搜索优化 | P9-02 | Performance report |
 | P9-04 | 所有历史 schema/规则/Skill 格式迁移矩阵 | P3–P8 | Migration report |
 | P9-05 | 备份、空机恢复、灾难恢复演练 | P3, P7 | Recovery sign-off |
 | P9-06 | Threat model 收口、依赖审计、权限与日志扫描 | P0, P4–P7 | Security sign-off |
 | P9-07 | VoiceOver、键盘、对比度、减少动态和中英文本地化 | P1–P8 | Accessibility sign-off |
-| P9-08 | App Sandbox/Hardened Runtime/signing/notarization | P9-06 | Release app |
+| P9-08 | App Sandbox/Hardened Runtime、本地无需付费会员的构建与打包 | P9-06 | Release app |
 | P9-09 | 可复现开源构建、许可证、数据格式和 SDK 文档 | P9-08 | Source release |
-| P9-10 | 执行 PRD 八个端到端验收场景 | 全部 | Final acceptance |
+| P9-10 | 执行当前范围八个端到端验收场景 | 全部 | Final acceptance |
 
 测试方法见 [TESTING.md](TESTING.md)，退出门槛见 [ACCEPTANCE.md](ACCEPTANCE.md)。

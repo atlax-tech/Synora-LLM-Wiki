@@ -1,5 +1,7 @@
 # Synora Wiki 测试规范
 
+适用范围以 [PRODUCT §5.3](PRODUCT.md#53-当前服务与交付边界) 为准；DEFERRED 项不进入任何已规划阶段的依赖、完成率或退出门槛，不记为 BLOCKED，不要求 Apple 开发者账号。
+
 状态：CONFIRMED（测试要求）；原生测试命令与结果 UNRESOLVED，未创建工程、未运行产品测试。
 
 测试替身仅可用于单元/故障注入；不能替代真实实现、设备或供应商验收。
@@ -10,11 +12,11 @@
 |---|---|---|
 | Unit/Property | 每次提交 | XCTest/Swift Testing 报告、随机种子 |
 | Integration | 每个 PR、每日主干 | 临时库、迁移、作业、索引、Keychain fake |
-| Contract | Provider/CloudKit/MCP 变更 | 录制 fixture、schema diff、live opt-in 结果 |
+| Contract | Provider/公开音乐天气 API/MCP 变更 | 录制 fixture、schema diff、live opt-in 结果 |
 | Snapshot | UI 变更 | 三尺寸基线、差异图、颜色/布局阈值 |
 | XCUITest | 每个 Feature 合入 | 核心路径视频/日志、失败截图 |
-| Performance | 每日主干、阶段出口 | 启动/输入/搜索/导入/同步 trend |
-| Recovery/Fault injection | 存储、AI、同步、Skill 变更 | kill/断网/磁盘满/重复事件报告 |
+| Performance | 每日主干、阶段出口 | 启动/输入/搜索/导入 trend |
+| Recovery/Fault injection | 存储、AI、外部集成、Skill 变更 | kill/断网/磁盘满/重复事件报告 |
 | Accessibility | 每阶段 | VoiceOver 脚本、键盘路径、对比度报告 |
 | Security | P0 后持续，P6/P9 完整运行 | threat model、依赖/权限/日志扫描 |
 
@@ -26,11 +28,11 @@
 |---|---|---|
 | Unit | domain、block operations、risk policy、routing、merge | 核心包行覆盖 ≥ 85%，分支 ≥ 75% |
 | Property | operation replay、顺序键、幂等、导入导出往返 | 随机序列无不变量破坏 |
-| Integration | SQLite/FTS/assets/jobs/CloudKit fake/Keychain fake | 每个迁移和失败点覆盖 |
+| Integration | SQLite/FTS/assets/jobs/Keychain fake | 每个迁移和失败点覆盖 |
 | Contract | 各模型 adapter、structured output、stream/cancel/error | fixture+live opt-in 双套 |
 | UI | 编辑、媒体、AI、搜索、冲突、Skills、设置 | 关键旅程全自动 |
 | Snapshot | 1280×720、1440×900、1728×1117 | 符合 `DESIGN.md` 阈值 |
-| Performance | 启动、输入、长文、搜索、导入、同步 | 达到下方预算 |
+| Performance | 启动、输入、长文、搜索、导入 | 达到下方预算 |
 | Recovery | kill -9、磁盘满、断网、重复事件、旧版本迁移 | 无已确认内容丢失 |
 | Security | 权限、Keychain、路径、Skill/MCP、日志脱敏 | 高危 0，越权 0 |
 
@@ -49,7 +51,7 @@
 
 - 使用中文/英文/emoji/组合字符/第三方输入法 fixture 验证 TextKit range。
 - 对 operation 随机生成 100k 次 insert/move/update/delete，并重放比对最终哈希。
-- 模拟 CloudKit 重复、乱序、延迟和部分失败；验证幂等与冲突保留。
+- 在无付费会员/无 Team/无云容器配置下实测本地 build/test 与 GRDB 恢复；CloudKit 探针及其 fake 均 DEFERRED。
 - 让 Skill 进程崩溃、超时、请求未授权路径/域名；验证主应用与数据不受影响。
 
 ### P1 — 原生壳层与设计系统
@@ -98,25 +100,28 @@
 - XPC/WASI crash、无限循环、内存超限和取消，验证主应用稳定与事务回滚。
 - MCP server 尝试非 loopback、过期 token、重放和超大 payload。
 
-### P7 — Apple 生态与多设备同步
+### P7 — macOS 本地上下文与公开服务
 
-- Fake engine + 真机 CloudKit 两套；注入网络切换、推送丢失、服务器拒绝和配额错误。
-- 两设备随机并发 block 操作并最终比较 operation 集与 projection 哈希。
-- 针对每个 Apple 权限测试 full/limited/denied/revoked。
-- Health fixture 验证只同步摘要，不含原始 sample ID/原始记录。
+- iTunes fixture + opt-in live 查询覆盖 `media=music&entity=song`、storefront、空结果、429/超时、取消；公开接口验证不等于原生交互通过。
+- 真实 Apple Music 分享链接覆盖歌曲路径、专辑 `i` 参数、无歌曲 ID、地区不匹配、失效/短链；未能查证的匹配不自动替换歌曲。搜索选曲和粘贴均生成原生 MusicBlock，失败可手工补全。
+- 音乐卡片覆盖封面缺失、离线重开、导出导入/备份恢复、undo/redo、补全时删除或编辑；真实 Mac 验证点击交接本机 Music 及网页/复制回退，不以自动发声作为成功标准。
+- CoreLocation 覆盖授权、拒绝、撤销、超时、位置不可用与城市选择；确认坐标降精度在外发前发生，关闭联网后无后续请求或迟到写入。
+- Open-Meteo fixture + opt-in live 覆盖 current/daily、WMO 码、单位、时区跨日、无日出日落、断网/限流；快照与 attribution 持久化，旧记录不被当前天气覆盖。
+- 免费本地 Photos/地图/系统入口实测；不请求 MusicKit/WeatherKit 权限，不含 CloudKit 容器或 Developer Token。记录系统版本及实际配置。
+- 音乐/天气卡片执行三尺寸、键盘、VoiceOver 和文本对比度验证；不得把图标存在视作外部打开成功。
 
 ### P8 — 回顾、知识体验与图谱设计门
 
 - 真实日常数据完成 30 天使用模拟，评估干扰、重复建议和可解释性。
 - 手帐长文、密集照片、无元数据和部分授权状态逐屏 snapshot。
 - 从任意既有视图新建无需分类；完成记录、整理、相关内容、查询与建议撤销闭环。
-- 画像用显式偏好、单次情绪、相反事实、过期偏好、来源撤回和用户纠正验证：推测不冒充事实；停用/删除后不参与个性化、不自动重建；同步与恢复保持该状态。
+- 画像用显式偏好、单次情绪、相反事实、过期偏好、来源撤回和用户纠正验证：推测不冒充事实；停用/删除后不参与个性化、不自动重建；本地重启与备份恢复保持该状态。
 - 图谱在 1k/10k/100k 节点验证布局收敛、缩放、选择和后台取消；用户测试比较可读性。
 
 ### P9 — 系统级验证与个人发布
 
 - 用接近真实数据规模做 7 天 soak；注入进程终止、断网、磁盘临界和 provider 故障。
-- 在两台干净 Mac 与一台 iPhone 上从安装到恢复完整演练。
+- 在干净 Mac 环境从本地构建/运行到恢复完整演练；不要求 iPhone、跨设备或公证安装。
 - 静态/动态扫描 Keychain、entitlements、网络域名、日志、Skill/MCP 边界和导出包。
 - 对发布构建而非 Debug 构建重复性能、snapshot 和 UI 主路径。
 
@@ -130,4 +135,4 @@ U-008～010 使用固定语料、规则和预先登记的质量/性能/成本门
 
 ## AI 真实验收
 
-P4 在授权测试库与已配置模型上完成真实流式响应、提案审阅、持久提交和撤销；P5 以同一真实 runtime 验收 ingest/query/lint 与引用。没有设备、账号、模型或能力时记录 BLOCKED/未验证，不得用 fixture 宣称通过。Provider capability 差异保留矩阵与实际限制，不声称每个 provider 都支持全部模态。
+P4 在授权测试库与已配置模型上完成真实流式响应、提案审阅、持久提交和撤销；P5 以同一真实 runtime 验收 ingest/query/lint 与引用。缺少适用的 Mac 设备、BYOK 供应商配置或模型能力时记录该项 BLOCKED/未验证（不包括付费 Apple 账号及 DEFERRED 能力），不得用 fixture 宣称通过。Provider capability 差异保留矩阵与实际限制，不声称每个 provider 都支持全部模态。

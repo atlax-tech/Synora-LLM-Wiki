@@ -14,3 +14,5 @@
 | prototype/AGENTS.md、prototype/README.md | 只对本地原型有效，不约束正式产品 |
 
 必要时用 Python zipfile 或系统归档工具提取到临时目录阅读。禁止把归档展开回根目录，造成两套活动规范。
+
+付费 Apple 服务、同步与音乐/天气选型已由 [ADR-H003](../decisions/ADR-H003-free-local-services.md) 调整；档案原文保留，不作为当前或已规划后续阶段要求。

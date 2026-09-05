@@ -1,12 +1,14 @@
 # Synora Wiki 开发阶段规格
 
+适用范围以 [PRODUCT §5.3](PRODUCT.md#53-当前服务与交付边界) 为准；DEFERRED 项不进入任何已规划阶段的依赖、完成率或退出门槛，不记为 BLOCKED，不要求 Apple 开发者账号。
+
 文档版本：1.0
 状态：CONFIRMED（规划基线；P0–P9 全部 NOT_STARTED）
 解释：阶段用于降低工程与验收风险，不用于删减产品能力。每个阶段都必须交付可运行、可迁移、可测试的纵向切片；不允许用不可用占位控件提前宣称功能完成。
 
 ## 1. 阶段原则
 
-1. 先保护数据和编辑体验，再连接 AI、同步与外部能力。
+1. 先保护数据和编辑体验，再连接 AI 与范围内外部能力。
 2. 每阶段有明确入口条件、交付物和退出门槛；未过门槛不得堆叠下一阶段复杂度。
 3. 数据迁移、日志脱敏、可访问性、性能和视觉回归从第一阶段持续执行。
 4. 高风险能力先做技术探针，再进入产品实现；探针代码不直接进入生产路径。
@@ -16,16 +18,16 @@
 
 | 阶段 | 名称 | 核心成果 | 主要依赖 |
 |---|---|---|---|
-| P0 | 架构与风险探针 | 技术决策、工程骨架、编辑/同步/Skill 可行性证据 | 无 |
+| P0 | 架构与风险探针 | 技术决策、工程骨架、编辑/存储/Skill 可行性证据 | 无 |
 | P1 | 原生壳层与设计系统 | 与高保真原型一致的可交互 Mac 主窗口 | P0 |
 | P2 | 完整编辑与多媒体 | 可长期写作的块编辑器、媒体与版本恢复 | P1 |
 | P3 | 本地数据、检索与开放库 | 可靠存储、全文搜索、导入导出、备份恢复 | P2 |
 | P4 | AI Runtime、BYOK 与行内 AI | 多模型路由、审阅写入、Agent sidecar、行内建议 | P3 |
 | P5 | LLM Wiki 引擎 | ingest/query/lint、规则演进、引用与关系数据 | P4 |
 | P6 | Skills 与 MCP | 可安装、可授权、可隔离、可审计的扩展能力 | P5 |
-| P7 | Apple 生态与多设备同步 | iCloud、照片、地图、天气、音乐、iPhone 健康桥 | P3–P6 |
+| P7 | macOS 本地上下文与公开服务 | 照片、地图、CoreLocation + Open-Meteo、自有 Music Picker | P3–P6 |
 | P8 | 回顾、知识体验与图谱设计门 | 完整手帐/知识流；完成图谱独立设计与技术验证 | P4–P7 |
-| P9 | 系统级验证与个人发布 | 性能、安全、迁移、恢复、签名打包全部达标 | P1–P8 |
+| P9 | 系统级验证与个人发布 | 性能、安全、迁移、恢复、本地打包全部达标 | P1–P8 |
 
 ## 3. P0 — 架构与风险探针
 
@@ -36,18 +38,18 @@
 ### 范围
 
 - 建立 Xcode workspace、SwiftPM 模块、格式化、静态检查、测试与本地 CI。
-- 完成 ADR：最低系统版本、TextKit 2 编辑模型、GRDB/SQLite、CKSyncEngine、XPC/WASI、包签名。
+- 完成 ADR：最低系统版本、TextKit 2 编辑模型、GRDB/SQLite、同步暂缓范围、XPC/WASI、Skill 包签名（不依赖 Apple 付费证书）。
 - TextKit 2 探针：中文 IME、10 万字、块边界、图片 attachment、撤销、复制粘贴、VoiceOver。
-- CloudKit 探针：custom zone、CKSyncEngine state、离线写、重复事件、两设备冲突、大附件。
+- GRDB 探针：WAL、operation log、snapshot/replay；P0-06 同步探针 DEFERRED，不是退出条件。
 - Skill 探针：XPC 崩溃隔离、WASI 权限、取消/超时与 capability broker。
 - 建立 10k 记录、100k blocks、20 GB 媒体的可重复基准数据生成器。
 - 建立 threat model 和数据分类。
 
 ### 交付物
 
-- 可构建的空壳工程与所有 Package target。
+- 可构建的空壳工程与范围内必要 Package target（不含同步或 Companion）。
 - ADR-001 至 ADR-006。
-- 三个隔离探针报告及原始 benchmark。
+- 编辑/存储/Skill 探针报告及原始 benchmark。
 - CI 质量门和测试数据集说明。
 
 ### 退出门槛
@@ -92,7 +94,7 @@
 - TextKit 2 连续编辑面、Markdown 快捷输入、斜杠菜单、`@` 与 `[[`。
 - 选择格式栏、拖放、复制粘贴、查找替换、拼写检查、IME。
 - 图片、画廊/拼贴、视频、音频、PDF、文件、链接预览。
-- 自动保存、完整撤销/重做、版本历史、崩溃恢复和冲突占位机制。
+- 自动保存、完整撤销/重做、版本历史、崩溃恢复和本地 revision 冲突保护。
 - 手帐/笔记模板、元数据行、长文与媒体布局。
 - 单条记录 Markdown/HTML/PDF/原始包导出。
 
@@ -210,30 +212,29 @@
 
 见 [ACCEPTANCE.md](ACCEPTANCE.md) 对应阶段；不得越过未通过的门槛。
 
-## 10. P7 — Apple 生态与多设备同步
+## 10. P7 — macOS 本地上下文与公开服务
 
 ### 目标
 
-完成 Apple 手记式上下文联动和可靠的多设备数据闭环。
+完成本机手帐上下文联动，无付费 Apple 服务或同步前置条件。
 
 ### 范围
 
-- CKSyncEngine private zone、实体映射、asset 分片、state、tombstone。
-- 不相交 block 自动合并、重叠编辑冲突审阅、规则/知识页提案合并。
-- Photos、MapKit、WeatherKit、MusicKit 集成及授权降级。
-- Share Extension、Services、App Intents、Spotlight（遵守隐私开关）。
-- iPhone 伴侣：快速采集、分享、健康摘要选择与同步。
-- 新设备 bootstrap、按需媒体、同步诊断和账户切换。
+- Photos、MapKit/CoreLocation、Share Extension、Services、App Intents、Spotlight 的免费可用本地能力及权限降级；不引入需付费会员的服务配置。
+- CoreLocation 坐标 → Open-Meteo → 持久天气快照、attribution 与坐标外发控制。
+- 自有 Music Picker 搜索与 Apple Music 分享链接转 MusicBlock，展示元数据并跳转外部音乐应用；不实现应用内播放或最近播放自动读取。
+- 解析失败、网络关闭、权限撤销、导出恢复、撤销与迟到响应保护；技术契约见 ARCHITECTURE §14。
+- P7-01…05、P7-11/12 DEFERRED；不创建同步/iPhone targets，不阻塞 P8/P9。
 
 ### 交付物
 
-- `SynoraSync`、`SynoraIntegrations`、iPhone companion targets。
-- 双设备自动化/手工设备矩阵报告。
-- 权限、隐私、同步和恢复文档。
+- `SynoraIntegrations`、原生音乐与天气卡片、免费可用的系统入口。
+- Mac 真机集成、公开 API 契约、离线与权限矩阵报告。
+- 隐私、来源标注、失败回退与恢复说明。
 
 ### 退出门槛
 
-见 [ACCEPTANCE.md](ACCEPTANCE.md) 对应阶段；不得越过未通过的门槛。
+见 [ACCEPTANCE.md](ACCEPTANCE.md) P7；只计算在范围内任务。
 
 ## 11. P8 — 回顾、知识体验与图谱设计门
 
@@ -269,14 +270,14 @@
 ### 范围
 
 - 全量功能回归、性能优化、内存/能耗、无障碍和本地化。
-- 数据迁移矩阵、备份恢复演练、同步故障注入和库修复工具。
+- 数据迁移矩阵、备份恢复演练、本地故障注入和库修复工具。
 - 安全评审、依赖审计、Skill/MCP 渗透场景、日志脱敏。
-- App Sandbox、Hardened Runtime、签名、notarization、开源构建说明。
+- App Sandbox、Hardened Runtime、免费本地签名/打包、开源构建说明；Developer ID、公证及 App Store 分发 DEFERRED。
 - 用户手册、数据格式、Skill SDK、故障诊断与发布清单。
 
 ### 交付物
 
-- 签名/公证应用、可复现构建和源码发布包。
+- 本机自用应用、可复现构建和源码包；不以外部分发信任或公证作为交付条件。
 - 完整测试报告、已知限制、迁移/恢复手册。
 - `v1.0.0` 数据格式与 API 兼容承诺。
 

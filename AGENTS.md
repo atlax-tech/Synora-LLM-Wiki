@@ -3,6 +3,8 @@
 个人、开源、原生 macOS 记录与知识库；完整产品范围见 PRODUCT。
 当前只有规划与本地高保真参考，没有原生业务实现；P0–P9 均未启动。
 
+付费 Apple 服务与同步范围见 [PRODUCT §5.3](docs/PRODUCT.md#53-当前服务与交付边界) 和 [ADR-H003](docs/decisions/ADR-H003-free-local-services.md)：不作为 P0 或后续阶段 blocker；保留本地功能与恢复质量门。
+
 ## 必读与按需读取
 
 每次先读本文件、[PLAN](docs/PLAN.md) 的目标阶段和最近 [开发日志](docs/development-log/)，再按改动范围读下表。首次接手读 PRODUCT 与 ARCHITECTURE；禁止每次全量加载档案。
@@ -30,6 +32,9 @@
 Ponytail 只减少无价值的实现复杂度，不能砍需求、降低验收、以 MVP/mock/占位替代真实交付，也不能省略安全、数据恢复、可访问性或明确要求的测试。与上述约束冲突的精简建议不适用。修复定位根因并查调用方；不做无关重构。只有用户明确停用才停用。
 
 工程治理使用本机安装的 Harness Armor：初始化调用 `harness-build`，后续治理变更调用 `harness-update`，只读检查调用 `harness-check`。不得在 Harness-only 任务里编写业务代码。
+
+## 开发日志编写规范
+开发日志编写规范遵守 [development-log/README.md](docs/development-log/README.md)。
 
 ## 边界与证据
 
