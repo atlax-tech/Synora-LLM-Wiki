@@ -56,6 +56,15 @@ done
 
 xcodebuild \
   "${xcode_container[@]}" \
+  -scheme SynoraP0Probes \
+  -configuration Debug \
+  -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath "$derived_data/Probes" \
+  CODE_SIGNING_ALLOWED=YES \
+  build | tee "$artifact_dir/xcode-build-probes.log"
+
+xcodebuild \
+  "${xcode_container[@]}" \
   -scheme SynoraWiki \
   -configuration Debug \
   -destination 'platform=macOS,arch=arm64' \
