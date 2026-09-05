@@ -2,13 +2,13 @@
 
 提案版本：`P0-CLOSURE-PROPOSAL-20260906-v1`
 
-当前代码 HEAD：`19b0b42`（P0-08 benchmark commit）。本文件是 Harness `harness-update` 的只读提案，不是授权，也不把 P0 标为完成。
+当前代码 HEAD：`3a5b466`（P0-08 benchmark determinism fix）。本文件是 Harness `harness-update` 的只读提案，不是授权，也不把 P0 标为完成。
 
 ## 已确认事实
 
-- P0-01 至 P0-05、P0-07、P0-08 已有独立小步提交；P0-06 只有负向检查，P0-09 threat model、P0-10 六份 ADR 草案与 traceability/feasibility 文档待提交。
-- 本机 `script/quality.sh`（`SYNORA_XCODE_CONTAINER=project`）通过：SwiftPM 8 tests、覆盖率总行 91.52%、Xcode Debug/Release build、XCTest、XCUITest、ad-hoc 签名检查。
-- `script/p0.sh benchmark` 的 smoke profile 生成与 `--resume` SHA-256 比对通过；full 10k/100k/20 GiB profile 未运行。
+- P0-01 至 P0-05、P0-07、P0-08 已有独立小步提交；P0-06 只有负向检查，P0-09 threat model、P0-10 六份 ADR 草案与 traceability/feasibility 文档已提交。
+- 本机 `script/quality.sh`（`SYNORA_XCODE_CONTAINER=project`）在 HEAD `3a5b466` 通过：SwiftPM 8 tests、覆盖率总行 92.22%、Xcode Debug/Release build、XCTest、XCUITest、ad-hoc 签名检查；产物目录为 `/private/tmp/synora-wiki-quality-p0-head-3a5b466`。
+- `script/p0.sh benchmark` 的 smoke profile 两目录逐文件比较与 `--resume` SHA-256 比对通过；full 10k/100k/20 GiB profile 未运行。
 - TextKit 2 IME/attachment/undo/VoiceOver/performance、SQLite 故障注入、真实 Wasm 隔离/取消/崩溃、完整 benchmark、sentinel 日志扫描和独立清洁 clone 检查仍未完成。
 
 ## 建议的受管文件变更（需另行明确批准）
