@@ -1,0 +1,16 @@
+# 设计证据状态
+
+状态：原生 NOT_RUN；历史原型 QA 未复验。
+
+| 已确认事实 | 证据 | 影响 |
+|---|---|---|
+| 标称 1280×720 PNG 实际为 1513×863 | `sips -g pixelWidth -g pixelHeight` 对本地高保真 PNG 的输出 | 不继承旧 viewport、SSIM 或无裁切结论 |
+| 原型四列最小宽度 180+308+500+280=1268 | 归档 DESIGN §2.1；原型 styles.css grid | 1280 可容纳；旧 1240 折叠阈值需修正 |
+| `#969CAB` 对白色约 2.75:1 | sRGB WCAG 相对亮度公式计算 | 不满足原定信息文本 4.5:1；仅用于装饰 |
+| 原型含模拟 AI | 封存 prototype/README.md | 不能作为 provider、Wiki 或原生交互验收 |
+
+当前可视检查只确认参考截图有四栏、图文和上下文面板，不证明真实操作、IME、权限、保存、性能或可访问性。没有重跑旧 Web QA；也没有原生工程可测。
+
+P1 按 [DESIGN.md](DESIGN.md) 和 [TESTING.md](TESTING.md) 建立新的原生基线与证据。每次记录 HEAD、系统、内容区 pt、scale、PNG px、状态、几何/色彩差异与人工验收结果。其他交互不得从静态图推断通过。
+
+历史原始结论完整保存在 [封存档案](archive/2026-09-05-product-baseline.zip)，只供追溯。
