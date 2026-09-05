@@ -8,8 +8,8 @@
 
 ## 证据
 
-- `App/TextKit2Probe.swift` 创建 TextKit 2 `NSTextView`，并以中文、英文、组合字符、ZWJ emoji 和行边界 fixture 检查 UTF-16 block ranges。
-- `SynoraP0Probes` Debug 构建通过；当前只证明编译和 fixture 结果，未证明第三方 IME、附件、撤销、复制粘贴、VoiceOver 或长文延迟。
+- `App/TextKit2Probe.swift` 创建 TextKit 2 `NSTextView`，并包含以中文、英文、组合字符、ZWJ emoji 和行边界为数据的 UTF-16 block range 检查；构建不会执行该检查。
+- `SynoraP0Probes` Debug 构建通过；当前只证明编译，未证明运行时 fixture、第三方 IME、附件、撤销、复制粘贴、VoiceOver 或长文延迟。
 
 ## 备选与后果
 

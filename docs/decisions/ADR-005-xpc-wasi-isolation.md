@@ -9,7 +9,7 @@
 ## 证据
 
 - `App/SynoraAgentServiceProbe.swift` 是独立 XPC target，拒绝非法、过期和已取消请求并返回结构化状态。
-- `SynoraSkillProbe` 的 policy 单元测试覆盖未声明 capability 和非 loopback host；`bootstrap_wasmtime.sh` 固定 Wasmtime 48.0.1 官方 C API 包并校验 SHA-256。
+- `SynoraSkillProbe` 的 policy 单元测试覆盖未声明 capability 和非 loopback host；`bootstrap_wasmtime.sh` 固定 Wasmtime 48.0.1 官方 C API 包。本机已执行一次 `script/p0.sh skill` 并验证该归档 SHA-256，但这不等于真实 runtime 已接入。
 - 当前 service 返回 `runtimeUnavailable`；未链接真实 Wasmtime C API，也未跑 guest、无 preopen、环境继承、崩溃重连、资源限制或 ≤100 ms 取消实验。
 
 ## 备选与后果

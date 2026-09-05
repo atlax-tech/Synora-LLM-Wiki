@@ -9,7 +9,7 @@
 ## 证据
 
 - `Packages/SynoraCore/Package.swift` 精确固定 GRDB 7.10.0；`StoreProbe` 创建 WAL 数据库、operation log、snapshots 和 metadata 表。
-- `SynoraStoreProbeTests` 证明正常保存、幂等 operation ID、过期 revision 不产生部分写入和快照校验；全量 SwiftPM 测试通过。
+- `SynoraStoreProbeTests` 证明正常保存、重复 operation ID 返回同一 receipt 且不改变 projection、过期 revision 不产生部分写入和快照校验；全量 SwiftPM 测试通过。
 - 未运行 100k replay、进程终止、损坏快照、迁移回滚或 `SQLITE_FULL` 注入。
 
 ## 备选与后果

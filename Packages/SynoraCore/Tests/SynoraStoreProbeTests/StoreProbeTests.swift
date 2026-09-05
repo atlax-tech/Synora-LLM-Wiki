@@ -15,6 +15,12 @@ func storeWritesOperationAndRejectsStaleRevisionWithoutPartialWrite() throws {
   let first = try store.saveReceipt(Record(id: recordID, title: "first"))
   #expect(first.revision == 1)
   #expect(try store.operationCount() == 1)
+  let repeated =
+    try store.saveReceipt(
+      Record(id: recordID, title: "ignored"), operationID: first.operationID)
+  #expect(repeated == first)
+  #expect(try store.operationCount() == 1)
+  #expect(try store.record(id: recordID)?.title == "first")
   #expect(throws: RevisionError.stale(expected: 0, actual: 1)) {
     try store.saveReceipt(Record(id: recordID, title: "stale", revision: 0))
   }
