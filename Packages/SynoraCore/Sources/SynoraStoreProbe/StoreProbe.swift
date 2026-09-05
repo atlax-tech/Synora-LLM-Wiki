@@ -20,6 +20,7 @@ public enum StoreError: Error, Equatable, Sendable {
   case invalidRecord
   case invalidSnapshot
   case operationConflict
+  case invalidOperation
 }
 
 public final class StoreProbe: RecordRepository, @unchecked Sendable {
@@ -186,7 +187,9 @@ public final class StoreProbe: RecordRepository, @unchecked Sendable {
       let nextRevision = record.revision + 1
       let persistedRecord = SynoraDomain.Record(
         id: record.id, title: record.title, revision: nextRevision)
-      let payload = try JSONEncoder().encode(persistedRecord)
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      let payload = try encoder.encode(persistedRecord)
       let operation = Operation(
         id: operationID,
         transactionID: transactionID,
@@ -296,6 +299,47 @@ public final class StoreProbe: RecordRepository, @unchecked Sendable {
   public func projectionHash() throws -> String {
     let snapshot = try snapshot()
     return snapshot.sha256
+  }
+
+  /// Rebuilds the record projection only after validating the complete operation chain.
+  public func replayRecords() throws {
+    try pool.write { db in
+      var records: [UUID: SynoraDomain.Record] = [:]
+      var sequence: Int64 = 0
+      var previousHash: String?
+      let cursor = try Row.fetchCursor(db, sql: "SELECT * FROM operations ORDER BY sequence")
+      while let row = try cursor.next() {
+        guard let idText: String = row["id"], let id = UUID(uuidString: idText),
+          let entityText: String = row["entity_id"], let entityID = UUID(uuidString: entityText),
+          let transactionID: Int64 = row["transaction_id"],
+          let storedSequence: Int64 = row["sequence"], storedSequence == sequence + 1,
+          let revision: Int = row["entity_revision"], revision > 0,
+          let kind: String = row["kind"], kind == "record.save",
+          let payload: Data = row["payload"],
+          let timestamp: Double = row["timestamp"], timestamp.isFinite,
+          let storedHash: String = row["hash"]
+        else { throw StoreError.invalidOperation }
+        let parent: String? = row["previous_hash"]
+        let operation = Operation(
+          id: id, transactionID: transactionID, sequence: storedSequence,
+          entityID: entityID, entityRevision: revision, kind: kind, payload: payload,
+          timestamp: Date(timeIntervalSince1970: timestamp), previousHash: parent)
+        guard parent == previousHash, operation.hash == storedHash,
+          let record = try? JSONDecoder().decode(SynoraDomain.Record.self, from: payload),
+          record.id == entityID, record.revision == revision,
+          revision == (records[entityID]?.revision ?? 0) + 1
+        else { throw StoreError.invalidOperation }
+        records[entityID] = record
+        sequence = storedSequence
+        previousHash = storedHash
+      }
+      try db.execute(sql: "DELETE FROM records")
+      for record in records.values {
+        try db.execute(
+          sql: "INSERT INTO records (id, title, revision) VALUES (?, ?, ?)",
+          arguments: [record.id.uuidString, record.title, record.revision])
+      }
+    }
   }
 
   private func requestHash(for record: SynoraDomain.Record) -> String {

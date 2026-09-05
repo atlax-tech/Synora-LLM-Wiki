@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import SynoraDomain
 import Testing
 
@@ -33,4 +34,39 @@ func storeWritesOperationAndRejectsStaleRevisionWithoutPartialWrite() throws {
   let snapshot = try store.snapshot()
   #expect(snapshot.isValid())
   #expect(try store.latestSnapshot() == snapshot)
+}
+
+@Test
+func replayRestoresProjectionAndRejectsCorruptLogAtomically() throws {
+  let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let path = directory.appendingPathComponent("store.sqlite").path
+  let store = try StoreProbe(path: path)
+  let id = UUID()
+  for revision in 0..<100 {
+    try store.save(Record(id: id, title: "版本 \(revision) 👩‍💻", revision: revision))
+  }
+  let expected = try store.record(id: id)
+  let oldSnapshot = try store.snapshot()
+  try store.save(Record(id: id, title: "latest", revision: 100))
+  let newSnapshot = try store.snapshot()
+  let database = try DatabaseQueue(path: path)
+  try database.write { db in
+    try db.execute(
+      sql: "UPDATE snapshots SET sha256 = 'damaged' WHERE up_to_sequence = ?",
+      arguments: [newSnapshot.upToSequence])
+  }
+  #expect(try store.latestSnapshot() == oldSnapshot)
+  let latest = try store.record(id: id)
+  try database.write { db in try db.execute(sql: "DELETE FROM records") }
+  try store.replayRecords()
+  #expect(try store.record(id: id) == latest)
+  #expect(expected?.revision == 100)
+  #expect(try store.operationCount() == 101)
+  try database.write { db in
+    try db.execute(sql: "UPDATE operations SET hash = 'damaged' WHERE sequence = 50")
+  }
+  #expect(throws: StoreError.invalidOperation) { try store.replayRecords() }
+  #expect(try store.record(id: id) == latest)
 }
