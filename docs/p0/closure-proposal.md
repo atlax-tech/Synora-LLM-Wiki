@@ -2,12 +2,12 @@
 
 提案版本：`P0-CLOSURE-PROPOSAL-20260906-v1`
 
-质量证据绑定的源码 HEAD：`3a5b466`（P0-08 benchmark determinism fix）；之后的 `f203ac3`、`30592cb` 只更新本提案。本文件是 Harness `harness-update` 的只读提案，不是授权，也不把 P0 标为完成。
+质量证据绑定的源码 HEAD：`1ddd1ab`（补充 store idempotency test；benchmark determinism fix 在其祖先 `3a5b466`）；本文件是 Harness `harness-update` 的只读提案，不是授权，也不把 P0 标为完成。
 
 ## 已确认事实
 
 - P0-01 至 P0-05、P0-07、P0-08 已有独立小步提交；P0-06 只有负向检查，P0-09 threat model、P0-10 六份 ADR 草案与 traceability/feasibility 文档已提交。
-- 本机 `script/quality.sh` 默认 workspace 路径在当前源码状态通过：SwiftPM 8 tests、覆盖率总行 92.22%、Xcode Debug/Release build、XCTest、XCUITest、ad-hoc 签名检查；编译缓存定向到 `/private/tmp`，产物目录为 `/private/tmp/synora-wiki-quality-p0-workspace`。
+- 本机 `script/quality.sh` 默认 workspace 路径在 HEAD `1ddd1ab` 通过：SwiftPM 8 tests、覆盖率总行 92.64%、Xcode Debug/Release build、XCTest、XCUITest、ad-hoc 签名检查；编译缓存定向到 `/private/tmp`，产物目录为 `/private/tmp/synora-wiki-quality-p0-head-1ddd1ab`。
 - `script/p0.sh benchmark` 的 smoke profile 两目录逐文件比较与 `--resume` SHA-256 比对通过；full 10k/100k/20 GiB profile 未运行。
 - TextKit 2 IME/attachment/undo/VoiceOver/performance、SQLite 故障注入、真实 Wasm 隔离/取消/崩溃、完整 benchmark、sentinel 日志扫描和独立清洁 clone 检查仍未完成。
 
