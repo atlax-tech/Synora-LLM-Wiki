@@ -6,9 +6,10 @@
 
 ## 已确认事实
 
-- `script/quality.sh` 在 `/private/tmp/synora-wiki-quality-a7c3fc4` 通过：11 个 Swift Testing tests、总行覆盖率 93.53%、正式应用 Debug/Release、probe host 与嵌入 XPC 集成构建、XCTest、XCUITest、签名和 entitlement 检查。
+- `script/quality.sh` 在 `/private/tmp/synora-wiki-quality-a7c3fc4` 通过：11 个 Swift Testing tests、总行覆盖率 93.53%、正式应用 Debug/Release、probe host 与嵌入 XPC 集成构建、XCTest、XCUITest、签名和 entitlement 检查。提交态 `2736c64` 的隔离 clone 在 `/private/tmp/synora-wiki-quality-clean-2736c64` 通过同一门。
+- `script/p0.sh all` 通过 probe build、store/skill focused tests、Wasmtime 48.0.1 下载校验与 deterministic smoke benchmark；P0-06 负向扫描无产品代码命中，README 仍为 0 字节，保护目录保持未跟踪。
 - probe 集成日志确认 `SynoraAgentServiceProbe` 链接本地 `SynoraSkillProbe`，再嵌入 `SynoraP0Probes.app`。
-- P0 仍是 `CHANGES_REQUIRED`：真实 TextKit IME/attachment/VoiceOver/延迟、100k store replay 与故障注入、真实 Wasmtime guest/capability callback/隔离矩阵、20 GiB full corpus、sentinel 扫描、清洁 clone 与远端 CI 均未完成。
+- P0 仍是 `CHANGES_REQUIRED`：真实 TextKit IME/attachment/VoiceOver/延迟、100k store replay 与故障注入、真实 Wasmtime guest/capability callback/隔离矩阵、20 GiB full corpus、sentinel 扫描与远端 CI 均未完成。
 - `validate_manifest.py` 通过。`detect_drift.py` 报告 5 项既有 drift：`.gitignore`、`AGENTS.md`、`ADR-H001`、初始化日志，以及 `ADR-H001` 的 source fingerprint。
 
 ## 输入哈希
