@@ -28,8 +28,18 @@ private struct P0ProbeOverview: View {
         LabeledContent("Architecture", value: report.architecture)
         LabeledContent("Swift toolchain", value: report.swiftVersion)
         LabeledContent("Foundation Models", value: report.foundationModels)
+        LabeledContent(
+          "TextKit 2 ranges",
+          value: TextKit2ProbeResult.fixture.rangesValid ? "valid" : "invalid"
+        )
       }
       .textSelection(.enabled)
+
+      Text("TextKit 2 editing fixture")
+        .font(.headline)
+      TextKit2ProbeView(initialText: TextKit2ProbeResult.fixture.text)
+        .frame(minHeight: 160)
+        .border(.secondary)
     }
     .frame(minWidth: 720, minHeight: 480, alignment: .topLeading)
     .padding()
