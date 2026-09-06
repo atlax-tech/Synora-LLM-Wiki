@@ -141,3 +141,50 @@ func guestCannotResolveHostImportsOrExceedDeadline() throws {
   ])
   #expect(WasmtimeProbe.runStart(module: startModule, library: library, under: root))
 }
+
+// Imports "synora"."request" (4 i32 -> i32), exports memory holding
+// "readTemporaryDirectory/tmp", and its start function calls the import.
+private let brokerModule = Data([
+  0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00,
+  0x01, 0x0C, 0x02, 0x60, 0x00, 0x00, 0x60, 0x04, 0x7F, 0x7F, 0x7F, 0x7F, 0x01, 0x7F,
+  0x02, 0x12, 0x01, 0x06, 0x73, 0x79, 0x6E, 0x6F, 0x72, 0x61,
+  0x07, 0x72, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x00, 0x01,
+  0x03, 0x02, 0x01, 0x00,
+  0x05, 0x03, 0x01, 0x00, 0x01,
+  0x07, 0x0A, 0x01, 0x06, 0x6D, 0x65, 0x6D, 0x6F, 0x72, 0x79, 0x02, 0x00,
+  0x08, 0x01, 0x01,
+  0x0A, 0x0F, 0x01, 0x0D, 0x00, 0x41, 0x00, 0x41, 0x16, 0x41, 0x16, 0x41, 0x04, 0x10, 0x00,
+  0x1A, 0x0B,
+  0x0B, 0x20, 0x01, 0x00, 0x41, 0x00, 0x0B, 0x1A,
+  0x72, 0x65, 0x61, 0x64, 0x54, 0x65, 0x6D, 0x70, 0x6F, 0x72, 0x61, 0x72, 0x79, 0x44, 0x69,
+  0x72, 0x65, 0x63, 0x74, 0x6F, 0x72, 0x79, 0x2F, 0x74, 0x6D, 0x70,
+])
+
+@Test
+func brokerReceivesGuestCapabilityRequestsAndAppliesPolicy() throws {
+  guard let root = ProcessInfo.processInfo.environment["SYNORA_WASMTIME_ROOT"] else { return }
+  let library = URL(fileURLWithPath: root).appendingPathComponent("lib/libwasmtime.dylib").path
+  let policy = CapabilityPolicy(capabilities: [.readTemporaryDirectory])
+  var recorded: [(capability: String, target: String)] = []
+  let broker: WasmtimeProbe.SkillBroker = { capability, target in
+    recorded.append((capability, target))
+    guard capability == SkillCapability.readTemporaryDirectory.rawValue, target == "/tmp" else {
+      return 1
+    }
+    return 0
+  }
+  #expect(
+    WasmtimeProbe.runStart(module: brokerModule, library: library, under: root, broker: broker))
+  #expect(recorded.count == 1)
+  #expect(recorded[0].capability == "readTemporaryDirectory")
+  #expect(recorded[0].target == "/tmp")
+
+  // A policy that lacks the capability still lets the run complete; the guest only
+  // sees the denial return code.
+  recorded.removeAll()
+  let denying: WasmtimeProbe.SkillBroker = { _, _ in 1 }
+  #expect(
+    WasmtimeProbe.runStart(module: brokerModule, library: library, under: root, broker: denying))
+  #expect(recorded.isEmpty)
+  _ = policy
+}

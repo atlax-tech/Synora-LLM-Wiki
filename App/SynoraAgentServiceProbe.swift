@@ -46,7 +46,7 @@ final class SynoraAgentService: NSObject, NSXPCListenerDelegate, AgentServicePro
           try SkillPolicyEvaluator().validate(decoded, now: Date())
           if isCancelled(decoded.requestID.uuidString) {
             result = SkillServiceResult(code: "cancelled", message: "request cancelled")
-          } else if runGuest(decoded.module) {
+          } else if runGuest(decoded) {
             result = SkillServiceResult(code: "success", message: "guest start completed")
           } else {
             result = SkillServiceResult(
@@ -123,13 +123,39 @@ final class SynoraAgentService: NSObject, NSXPCListenerDelegate, AgentServicePro
     (try? JSONEncoder().encode(result)) ?? Data()
   }
 
-  private func runGuest(_ module: Data) -> Bool {
+  private func runGuest(_ request: SkillRequest) -> Bool {
+    lock.lock()
+    let flag = cancelFlags[request.requestID.uuidString]
+    lock.unlock()
     guard let frameworks = Bundle.main.privateFrameworksURL else { return false }
     let library = frameworks.appendingPathComponent("libwasmtime.dylib")
+    let deadline = max(0, request.deadline.timeIntervalSinceNow)
+    let evaluator = SkillPolicyEvaluator()
+    let now = Date()
     return WasmtimeProbe.runStart(
-      module: module,
+      module: request.module,
       library: library.path,
-      under: frameworks.path)
+      under: frameworks.path,
+      deadlineNanos: UInt64(deadline * 1_000_000_000),
+      cancelFlag: flag,
+      // The service is the only capability broker: requests must match the request
+      // policy, loopback targets must be allowlisted, and everything else is denied.
+      broker: { capability, target in
+        guard let capabilityValue = SkillCapability(rawValue: capability) else {
+          return 1
+        }
+        do {
+          try evaluator.authorize(
+            capability: capabilityValue, policy: request.policy, now: now,
+            deadline: request.deadline)
+          if capabilityValue == .networkLoopback {
+            try evaluator.authorizeNetwork(host: target, policy: request.policy)
+          }
+          return 0
+        } catch {
+          return 1
+        }
+      })
   }
 }
 

@@ -117,6 +117,17 @@ public struct SkillPolicyEvaluator: Sendable {
 }
 
 public enum WasmtimeProbe {
+  /// Returns 0 to allow the guest's capability request, non-zero to deny.
+  public typealias SkillBroker = (_ capability: String, _ target: String) -> Int32
+
+  private final class BrokerBox: @unchecked Sendable {
+    // Optional because optional function types are escaping and survive the C call.
+    let broker: SkillBroker?
+    init(_ broker: SkillBroker?) {
+      self.broker = broker
+    }
+  }
+
   public static func libraryAvailable(at path: String, under root: String) -> Bool {
     path.withCString { pathPointer in
       root.withCString { rootPointer in
@@ -130,16 +141,55 @@ public enum WasmtimeProbe {
     library: String,
     under root: String,
     deadlineNanos: UInt64 = 0,
-    cancelFlag: UnsafeMutablePointer<Int32>? = nil
+    cancelFlag: UnsafeMutablePointer<Int32>? = nil,
+    broker: SkillBroker? = nil
   ) -> Bool {
     module.withUnsafeBytes { bytes in
       library.withCString { libraryPointer in
         root.withCString { rootPointer in
-          synora_wasmtime_run_start(
-            libraryPointer, rootPointer, bytes.bindMemory(to: UInt8.self).baseAddress,
-            module.count, deadlineNanos, cancelFlag)
+          runStartUnsafe(
+            libraryPointer: libraryPointer, rootPointer: rootPointer, bytes: bytes,
+            deadlineNanos: deadlineNanos, cancelFlag: cancelFlag, broker: broker)
         }
       }
+    }
+  }
+
+  private static func runStartUnsafe(
+    libraryPointer: UnsafePointer<CChar>,
+    rootPointer: UnsafePointer<CChar>,
+    bytes: UnsafeRawBufferPointer,
+    deadlineNanos: UInt64,
+    cancelFlag: UnsafeMutablePointer<Int32>?,
+    broker: SkillBroker?
+  ) -> Bool {
+    guard let broker else {
+      return synora_wasmtime_run_start(
+        libraryPointer, rootPointer, bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
+        bytes.count, deadlineNanos, cancelFlag, nil)
+    }
+    let box = BrokerBox(broker)
+    let context = Unmanaged.passRetained(box).toOpaque()
+    defer { Unmanaged<BrokerBox>.passUnretained(box).release() }
+    var cBroker = synora_broker_t(
+      request: { rawContext, capabilityPointer, capabilityLength, targetPointer, targetLength in
+        guard let rawContext, let capabilityPointer, let targetPointer else {
+          return 1
+        }
+        let box = Unmanaged<BrokerBox>.fromOpaque(rawContext).takeUnretainedValue()
+        let capability = String(
+          decoding: UnsafeRawBufferPointer(start: capabilityPointer, count: capabilityLength),
+          as: UTF8.self)
+        let target = String(
+          decoding: UnsafeRawBufferPointer(start: targetPointer, count: targetLength),
+          as: UTF8.self)
+        return box.broker?(capability, target) ?? 1
+      },
+      context: context)
+    return withUnsafePointer(to: &cBroker) { brokerPointer in
+      synora_wasmtime_run_start(
+        libraryPointer, rootPointer, bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
+        bytes.count, deadlineNanos, cancelFlag, brokerPointer)
     }
   }
 }
