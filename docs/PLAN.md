@@ -2,7 +2,7 @@
 
 适用范围以 [PRODUCT §5.3](PRODUCT.md#53-当前服务与交付边界) 为准；DEFERRED 项不进入任何已规划阶段的依赖、完成率或退出门槛，不记为 BLOCKED，不要求 Apple 开发者账号。
 
-状态：P0 `PASS`；P1 `READY`；P2–P9 `NOT_STARTED`。P0 工程探针已在 `ce4a71c` 收口；当前证据、系统级 UI 限制和后续 hand-off 见 [P0 traceability](p0/traceability.md)。已移交 P2/P3/P6/P9 的生产级矩阵不再作为 P0 blocker。P1 尚未启动。
+状态：P0 `PASS`；P1 `IN_PROGRESS`；P2–P9 `NOT_STARTED`。P0 工程探针已在 `ce4a71c` 收口；当前证据、系统级 UI 限制和后续 hand-off 见 [P0 traceability](p0/traceability.md)。P1 已按启动提案进入执行，阶段内采用 macOS 26 系统 Liquid Glass 功能层与原生 Material 内容层分离策略。
 
 本文件只定义任务与依赖。阶段目标见 [SPEC.md](SPEC.md)，流程见 [DEVELOPMENT.md](DEVELOPMENT.md)，测试见 [TESTING.md](TESTING.md)，验收见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 

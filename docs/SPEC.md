@@ -3,8 +3,8 @@
 适用范围以 [PRODUCT §5.3](PRODUCT.md#53-当前服务与交付边界) 为准；DEFERRED 项不进入任何已规划阶段的依赖、完成率或退出门槛，不记为 BLOCKED，不要求 Apple 开发者账号。
 
 文档版本：1.0
-状态：CONFIRMED（规划基线）；P0 `PASS`，P1 `READY`，P2–P9 `NOT_STARTED`。
-阶段状态：P0 工程探针已在 `ce4a71c` 收口。SwiftPM、格式、应用/探针构建和 focused probe 证据已记录；probe UI 的 accessibility 环境阻塞已重试并如实保留，不前移为产品代码 blocker。P1 仅标记为 READY，不自动启动。
+状态：CONFIRMED（规划基线）；P0 `PASS`，P1 `IN_PROGRESS`，P2–P9 `NOT_STARTED`。
+阶段状态：P0 工程探针已在 `ce4a71c` 收口。SwiftPM、格式、应用/探针构建和 focused probe 证据已记录；probe UI 的 accessibility 环境阻塞已重试并如实保留，不前移为产品代码 blocker。P1 已获启动提案批准并进入实现。
 解释：阶段只分配实现和验证时机，不删减产品能力。实现阶段交付可运行增量；探针阶段只需用最小代表性证据回答预定技术问题。不允许用不可用占位控件提前宣称功能完成。
 
 ## 1. 阶段原则
@@ -73,6 +73,7 @@ P0 已按 [ACCEPTANCE.md](ACCEPTANCE.md) 的轻量化边界收口：最小代表
 - 语义颜色、排版、间距、圆角、图标和动效 token。
 - 键盘焦点、VoiceOver 标签、减少动态效果、增加对比度。
 - 1280×720、1440×900、1728×1117 截图基线。
+- macOS 26 原生 Liquid Glass：标准导航/控件使用系统玻璃；正文和信息密集内容使用 Apple 原生 Material 保持可读性；禁止自制模糊、折射和透明叠层。
 
 ### 交付物
 
