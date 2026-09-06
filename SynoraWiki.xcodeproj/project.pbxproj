@@ -24,6 +24,9 @@
 		A1000000000000000000000F /* ShellRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001E /* ShellRootView.swift */; };
 		A10000000000000000000010 /* ShellCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001F /* ShellCommands.swift */; };
 		A10000000000000000000011 /* RecordKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* RecordKind.swift */; };
+		A10000000000000000000012 /* InspectorMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000021 /* InspectorMode.swift */; };
+		A10000000000000000000013 /* SidebarItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* SidebarItem.swift */; };
+		A10000000000000000000014 /* LibraryNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* LibraryNavigation.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -53,6 +56,9 @@
 		A2000000000000000000001E /* ShellRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Shell/ShellRootView.swift"; sourceTree = "<group>"; };
 		A2000000000000000000001F /* ShellCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Shell/ShellCommands.swift"; sourceTree = "<group>"; };
 		A20000000000000000000020 /* RecordKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Records/RecordKind.swift"; sourceTree = "<group>"; };
+		A20000000000000000000021 /* InspectorMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Inspector/InspectorMode.swift"; sourceTree = "<group>"; };
+		A20000000000000000000022 /* SidebarItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Navigation/SidebarItem.swift"; sourceTree = "<group>"; };
+		A20000000000000000000023 /* LibraryNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Navigation/LibraryNavigation.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -64,7 +70,7 @@
 
 /* Begin PBXGroup section */
 		A40000000000000000000001 = {isa = PBXGroup; children = (A40000000000000000000002, A40000000000000000000003, A40000000000000000000004, A40000000000000000000005, A40000000000000000000006, A40000000000000000000007, A40000000000000000000008, ); sourceTree = "<group>"; };
-		A40000000000000000000002 /* App */ = {isa = PBXGroup; children = (A20000000000000000000001, A20000000000000000000002, A20000000000000000000008, A20000000000000000000009, A20000000000000000000015, A20000000000000000000017, A20000000000000000000018, A2000000000000000000001A, A2000000000000000000001B, A2000000000000000000001C, A2000000000000000000001D, A2000000000000000000001E, A2000000000000000000001F, A20000000000000000000020, ); path = App; sourceTree = "<group>"; };
+		A40000000000000000000002 /* App */ = {isa = PBXGroup; children = (A20000000000000000000001, A20000000000000000000002, A20000000000000000000008, A20000000000000000000009, A20000000000000000000015, A20000000000000000000017, A20000000000000000000018, A2000000000000000000001A, A2000000000000000000001B, A2000000000000000000001C, A2000000000000000000001D, A2000000000000000000001E, A2000000000000000000001F, A20000000000000000000020, A20000000000000000000021, A20000000000000000000022, A20000000000000000000023, ); path = App; sourceTree = "<group>"; };
 		A40000000000000000000003 /* Config */ = {isa = PBXGroup; children = (A20000000000000000000005, A20000000000000000000006, A20000000000000000000007, ); path = Config; sourceTree = "<group>"; };
 		A40000000000000000000004 /* Products */ = {isa = PBXGroup; children = (A20000000000000000000003, A20000000000000000000004, A20000000000000000000012, A20000000000000000000013, A20000000000000000000016, ); name = Products; sourceTree = "<group>"; };
 		A40000000000000000000005 /* Synora Wiki */ = {isa = PBXGroup; children = ( ); name = "Synora Wiki"; sourceTree = "<group>"; };
@@ -110,7 +116,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		A30000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( A10000000000000000000001 /* SynoraWikiApp.swift in Sources */, A1000000000000000000000C /* ShellLayoutPolicy.swift in Sources */, A1000000000000000000000D /* ShellModel.swift in Sources */, A1000000000000000000000E /* WindowMetricsReader.swift in Sources */, A1000000000000000000000F /* ShellRootView.swift in Sources */, A10000000000000000000010 /* ShellCommands.swift in Sources */, A10000000000000000000011 /* RecordKind.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
+		A30000000000000000000003 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( A10000000000000000000001 /* SynoraWikiApp.swift in Sources */, A1000000000000000000000C /* ShellLayoutPolicy.swift in Sources */, A1000000000000000000000D /* ShellModel.swift in Sources */, A1000000000000000000000E /* WindowMetricsReader.swift in Sources */, A1000000000000000000000F /* ShellRootView.swift in Sources */, A10000000000000000000010 /* ShellCommands.swift in Sources */, A10000000000000000000011 /* RecordKind.swift in Sources */, A10000000000000000000012 /* InspectorMode.swift in Sources */, A10000000000000000000013 /* SidebarItem.swift in Sources */, A10000000000000000000014 /* LibraryNavigation.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
 		A30000000000000000000005 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( A10000000000000000000002 /* SynoraP0ProbesApp.swift in Sources */, A10000000000000000000007 /* TextKit2Probe.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
 		A30000000000000000000007 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( A10000000000000000000003 /* SynoraWikiTests.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
 		A30000000000000000000008 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( A10000000000000000000004 /* SynoraP0UITests.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };

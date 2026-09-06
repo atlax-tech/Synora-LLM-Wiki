@@ -6,6 +6,12 @@ struct ShellRootView: View {
   @State private var model: ShellModel
   @SceneStorage("synora.shell.sidebar-visible") private var persistedSidebarVisible = true
   @SceneStorage("synora.shell.inspector-visible") private var persistedInspectorVisible = true
+  @SceneStorage("synora.shell.sidebar-selection") private var persistedSidebarSelection =
+    SidebarItem.today.rawValue
+  @SceneStorage("synora.shell.record-kind") private var persistedRecordKind = RecordKind.note
+    .rawValue
+  @SceneStorage("synora.shell.inspector-mode") private var persistedInspectorMode = InspectorMode
+    .context.rawValue
   @State private var searchText = ""
   @State private var searchPresented = false
 
@@ -17,7 +23,7 @@ struct ShellRootView: View {
     ZStack(alignment: .topTrailing) {
       GeometryReader { geometry in
         NavigationSplitView(columnVisibility: columnVisibilityBinding) {
-          ShellSidebarPlaceholder()
+          LibraryNavigation(model: model)
             .navigationSplitViewColumnWidth(
               min: ShellLayoutPolicy.sidebarWidth,
               ideal: ShellLayoutPolicy.sidebarWidth,
@@ -76,10 +82,24 @@ struct ShellRootView: View {
             desiredSidebarVisible: persistedSidebarVisible,
             desiredInspectorVisible: persistedInspectorVisible
           )
+          model.restore(
+            sidebarSelection: SidebarItem(rawValue: persistedSidebarSelection),
+            recordKind: RecordKind(rawValue: persistedRecordKind) ?? .note,
+            inspectorMode: InspectorMode(rawValue: persistedInspectorMode) ?? .context
+          )
           model.reconcile(width: geometry.size.width)
         }
         .onChange(of: geometry.size.width) { _, width in
           model.reconcile(width: width)
+        }
+        .onChange(of: model.sidebarSelection) { _, selection in
+          persistedSidebarSelection = selection?.rawValue ?? ""
+        }
+        .onChange(of: model.selectedRecordKind) { _, kind in
+          persistedRecordKind = kind.rawValue
+        }
+        .onChange(of: model.inspectorMode) { _, mode in
+          persistedInspectorMode = mode.rawValue
         }
         .background(WindowMetricsReader { _ in })
       }
@@ -146,21 +166,6 @@ struct ShellRootView: View {
         persistedInspectorVisible = presented
       }
     )
-  }
-}
-
-private struct ShellSidebarPlaceholder: View {
-  var body: some View {
-    VStack(alignment: .leading, spacing: SynoraSpacing.md) {
-      Text("Library")
-        .font(SynoraTypography.sectionLabel.font)
-        .foregroundStyle(SynoraSemanticColor.inkSecondary.color)
-      Spacer()
-    }
-    .padding(SynoraSpacing.md)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .background(SynoraSemanticColor.sidebar.color)
-    .accessibilityIdentifier("sidebar")
   }
 }
 

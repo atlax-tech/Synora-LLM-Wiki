@@ -9,6 +9,10 @@ final class ShellModel {
   private(set) var effectiveInspectorVisible = true
   private(set) var commandPalettePresented = false
   private(set) var selectedRecordKind: RecordKind = .note
+  private(set) var sidebarSelection: SidebarItem? = .today
+  private(set) var inspectorMode: InspectorMode = .context
+  private(set) var noteCount = 0
+  private(set) var journalCount = 0
 
   private(set) var desiredSidebarVisible: Bool
   private(set) var desiredInspectorVisible: Bool
@@ -23,6 +27,16 @@ final class ShellModel {
     self.desiredSidebarVisible = desiredSidebarVisible
     self.desiredInspectorVisible = desiredInspectorVisible
     reconcile(width: availableContentWidth)
+  }
+
+  func restore(
+    sidebarSelection: SidebarItem?,
+    recordKind: RecordKind,
+    inspectorMode: InspectorMode
+  ) {
+    self.sidebarSelection = sidebarSelection
+    selectedRecordKind = recordKind
+    self.inspectorMode = inspectorMode
   }
 
   func setDesiredSidebarVisible(_ visible: Bool) {
@@ -59,6 +73,30 @@ final class ShellModel {
 
   func selectRecordKind(_ kind: RecordKind) {
     selectedRecordKind = kind
+  }
+
+  func selectSidebarItem(_ item: SidebarItem?) {
+    sidebarSelection = item
+    guard let item else { return }
+
+    if let recordKind = item.recordKind {
+      selectedRecordKind = recordKind
+    }
+
+    switch item {
+    case .context:
+      inspectorMode = .context
+      setDesiredInspectorVisible(true)
+    case .skills:
+      inspectorMode = .skills
+      setDesiredInspectorVisible(true)
+    default:
+      break
+    }
+  }
+
+  func setInspectorMode(_ mode: InspectorMode) {
+    inspectorMode = mode
   }
 
   var inspectorToggleEnabled: Bool {
