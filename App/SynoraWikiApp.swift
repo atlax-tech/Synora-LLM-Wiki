@@ -7,5 +7,8 @@ struct SynoraWikiApp: App {
       ShellRootView()
     }
     .defaultSize(width: 1440, height: 900)
+    .commands {
+      ShellCommands()
+    }
   }
 }

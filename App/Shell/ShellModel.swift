@@ -7,6 +7,8 @@ final class ShellModel {
   private(set) var availableContentWidth: CGFloat = 1440
   private(set) var effectiveSidebarVisible = true
   private(set) var effectiveInspectorVisible = true
+  private(set) var commandPalettePresented = false
+  private(set) var selectedRecordKind: RecordKind = .note
 
   private(set) var desiredSidebarVisible: Bool
   private(set) var desiredInspectorVisible: Bool
@@ -31,6 +33,37 @@ final class ShellModel {
   func setDesiredInspectorVisible(_ visible: Bool) {
     desiredInspectorVisible = visible
     reconcile(width: availableContentWidth)
+  }
+
+  func toggleSidebar() {
+    setDesiredSidebarVisible(!desiredSidebarVisible)
+  }
+
+  func toggleInspector() {
+    guard
+      effectiveInspectorVisible
+        || availableContentWidth >= ShellLayoutPolicy.inspectorWithListMinimumWidth
+    else {
+      return
+    }
+    setDesiredInspectorVisible(!effectiveInspectorVisible)
+  }
+
+  func setCommandPalettePresented(_ presented: Bool) {
+    commandPalettePresented = presented
+  }
+
+  func toggleCommandPalette() {
+    commandPalettePresented.toggle()
+  }
+
+  func selectRecordKind(_ kind: RecordKind) {
+    selectedRecordKind = kind
+  }
+
+  var inspectorToggleEnabled: Bool {
+    effectiveInspectorVisible
+      || availableContentWidth >= ShellLayoutPolicy.inspectorWithListMinimumWidth
   }
 
   func reconcile(width: CGFloat) {
