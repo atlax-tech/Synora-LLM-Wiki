@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 
 @testable import SynoraWiki
@@ -87,5 +88,70 @@ final class SynoraWikiTests: XCTestCase {
     XCTAssertEqual(model.inspectorMode, .context)
     XCTAssertFalse(model.desiredSidebarVisible)
     XCTAssertTrue(model.desiredInspectorVisible)
+  }
+
+  func testRecordListProjectionGroupsMonthsAndKeepsStableOrder() {
+    let records = [
+      Record(
+        id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+        kind: .note,
+        title: "Older same-day record",
+        summary: "Summary",
+        modifiedAt: testDate(year: 2026, month: 8, day: 22)
+      ),
+      Record(
+        id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+        kind: .note,
+        title: "Newer same-day record",
+        summary: "Summary",
+        modifiedAt: testDate(year: 2026, month: 8, day: 22)
+      ),
+      Record(
+        id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!,
+        kind: .note,
+        title: "September record",
+        summary: "Summary",
+        modifiedAt: testDate(year: 2026, month: 9, day: 1)
+      ),
+    ]
+
+    let groups = RecordListProjection.filterAndGroup(records: records, query: "")
+
+    XCTAssertEqual(groups.map(\.month.title), ["2026-09", "2026-08"])
+    XCTAssertEqual(
+      groups[1].records.map(\.id.uuidString),
+      [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000002",
+      ])
+  }
+
+  func testRecordListProjectionFiltersCaseInsensitiveAndChineseText() {
+    let records = [
+      Record(
+        id: UUID(),
+        kind: .note,
+        title: "Local Search",
+        summary: "A searchable note",
+        modifiedAt: testDate(year: 2026, month: 9, day: 1)
+      ),
+      Record(
+        id: UUID(),
+        kind: .note,
+        title: "本地记录",
+        summary: "关于搜索的摘要",
+        modifiedAt: testDate(year: 2026, month: 9, day: 2)
+      ),
+    ]
+
+    XCTAssertEqual(RecordListProjection.filterAndGroup(records: records, query: "local").count, 1)
+    XCTAssertEqual(RecordListProjection.filterAndGroup(records: records, query: "搜索").count, 1)
+    XCTAssertTrue(RecordListProjection.filterAndGroup(records: records, query: "missing").isEmpty)
+  }
+
+  private func testDate(year: Int, month: Int, day: Int) -> Date {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    return calendar.date(from: DateComponents(year: year, month: month, day: day, hour: 9))!
   }
 }

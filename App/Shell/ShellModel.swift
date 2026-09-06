@@ -9,10 +9,13 @@ final class ShellModel {
   private(set) var effectiveInspectorVisible = true
   private(set) var commandPalettePresented = false
   private(set) var selectedRecordKind: RecordKind = .note
+  private(set) var searchQuery = ""
   private(set) var sidebarSelection: SidebarItem? = .today
   private(set) var inspectorMode: InspectorMode = .context
   private(set) var noteCount = 0
   private(set) var journalCount = 0
+  private(set) var recordsByKind: [RecordKind: [Record]] = [:]
+  private(set) var selectedRecordIDs: [RecordKind: UUID?] = [.note: nil, .journal: nil]
 
   private(set) var desiredSidebarVisible: Bool
   private(set) var desiredInspectorVisible: Bool
@@ -37,6 +40,37 @@ final class ShellModel {
     self.sidebarSelection = sidebarSelection
     selectedRecordKind = recordKind
     self.inspectorMode = inspectorMode
+  }
+
+  func loadRecordsIfNeeded() {
+    guard recordsByKind.isEmpty else { return }
+
+    let records: [RecordKind: [Record]]
+    if ShellEnvironment.fixture == "records" {
+      records = [.note: RecordFixtureCatalog.notes, .journal: RecordFixtureCatalog.journals]
+    } else {
+      records = [.note: [], .journal: []]
+    }
+
+    recordsByKind = records
+    noteCount = records[.note]?.count ?? 0
+    journalCount = records[.journal]?.count ?? 0
+    selectedRecordIDs = records.reduce(into: [RecordKind: UUID?]()) { result, entry in
+      result[entry.key] = entry.value.first?.id
+    }
+  }
+
+  func records(for kind: RecordKind) -> [Record] {
+    recordsByKind[kind] ?? []
+  }
+
+  func selectRecord(_ id: UUID?, in kind: RecordKind) {
+    selectedRecordIDs[kind] = id
+  }
+
+  func selectedRecord(for kind: RecordKind) -> Record? {
+    guard let id = selectedRecordIDs[kind] ?? nil else { return nil }
+    return records(for: kind).first { $0.id == id }
   }
 
   func setDesiredSidebarVisible(_ visible: Bool) {
@@ -73,6 +107,10 @@ final class ShellModel {
 
   func selectRecordKind(_ kind: RecordKind) {
     selectedRecordKind = kind
+  }
+
+  func setSearchQuery(_ query: String) {
+    searchQuery = query
   }
 
   func selectSidebarItem(_ item: SidebarItem?) {

@@ -1,0 +1,149 @@
+import AppKit
+import SwiftUI
+import SynoraDesignSystem
+
+struct RecordListView: View {
+  @Bindable var model: ShellModel
+
+  var body: some View {
+    VStack(spacing: 0) {
+      Picker("Record kind", selection: recordKindBinding) {
+        ForEach(RecordKind.allCases, id: \.self) { kind in
+          Text(kind.title).tag(kind)
+        }
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+      .padding(.horizontal, SynoraSpacing.md)
+      .padding(.vertical, SynoraSpacing.sm)
+      .accessibilityLabel("Record kind")
+      .accessibilityIdentifier("record-kind")
+
+      if groups.isEmpty {
+        RecordListEmptyView(query: model.searchQuery)
+      } else {
+        List(selection: selectionBinding) {
+          ForEach(groups) { group in
+            Section(group.month.title) {
+              ForEach(group.records) { record in
+                RecordRow(record: record)
+                  .tag(record.id)
+              }
+            }
+          }
+        }
+        .listStyle(.inset)
+        .accessibilityIdentifier("record-list")
+      }
+    }
+    .background(SynoraSemanticColor.list.color)
+    .accessibilityLabel("Record list")
+    .accessibilityIdentifier("record-list")
+  }
+
+  private var groups: [RecordGroup] {
+    RecordListProjection.filterAndGroup(
+      records: model.records(for: model.selectedRecordKind),
+      query: model.searchQuery
+    )
+  }
+
+  private var recordKindBinding: Binding<RecordKind> {
+    Binding(
+      get: { model.selectedRecordKind },
+      set: { model.selectRecordKind($0) }
+    )
+  }
+
+  private var selectionBinding: Binding<UUID?> {
+    Binding(
+      get: { model.selectedRecordIDs[model.selectedRecordKind] ?? nil },
+      set: { model.selectRecord($0, in: model.selectedRecordKind) }
+    )
+  }
+}
+
+private struct RecordRow: View {
+  let record: Record
+
+  var body: some View {
+    HStack(spacing: SynoraSpacing.sm) {
+      RecordThumbnail(name: record.thumbnailName, label: record.title)
+
+      VStack(alignment: .leading, spacing: SynoraSpacing.xxs) {
+        Text(record.title)
+          .font(SynoraTypography.listTitle.font)
+          .foregroundStyle(SynoraSemanticColor.inkPrimary.color)
+          .lineLimit(1)
+
+        Text(record.summary)
+          .font(SynoraTypography.metadata.font)
+          .foregroundStyle(SynoraSemanticColor.inkSecondary.color)
+          .lineLimit(2)
+
+        Text(record.modifiedAt, style: .date)
+          .font(SynoraTypography.metadata.font)
+          .foregroundStyle(SynoraSemanticColor.inkSecondary.color)
+          .lineLimit(1)
+      }
+
+      Spacer(minLength: 0)
+    }
+    .frame(minHeight: 79)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(record.title)
+    .accessibilityValue(record.summary)
+    .accessibilityHint("Selects this record")
+    .accessibilityIdentifier("record-\(record.id.uuidString)")
+  }
+}
+
+private struct RecordThumbnail: View {
+  let name: String?
+  let label: String
+
+  var body: some View {
+    Group {
+      if let name, let image = NSImage(named: name) {
+        Image(nsImage: image)
+          .resizable()
+          .scaledToFill()
+      } else {
+        ZStack {
+          RoundedRectangle(cornerRadius: SynoraRadius.selection)
+            .fill(SynoraSemanticColor.accentSoft.color)
+          Image(systemName: "photo")
+            .foregroundStyle(SynoraSemanticColor.accentText.color)
+        }
+      }
+    }
+    .frame(width: 51, height: 51)
+    .clipShape(.rect(cornerRadius: SynoraRadius.selection))
+    .accessibilityLabel("Thumbnail for \(label)")
+  }
+}
+
+private struct RecordListEmptyView: View {
+  let query: String
+
+  var body: some View {
+    VStack(spacing: SynoraSpacing.sm) {
+      Image(systemName: query.isEmpty ? "tray" : "magnifyingglass")
+        .font(.title2)
+        .foregroundStyle(SynoraSemanticColor.inkSecondary.color)
+      Text(query.isEmpty ? "No records" : "No matching records")
+        .font(SynoraTypography.sectionTitle.font)
+        .foregroundStyle(SynoraSemanticColor.inkPrimary.color)
+      Text(
+        query.isEmpty ? "Your local records will appear here." : "Try a different title or summary."
+      )
+      .font(SynoraTypography.body.font)
+      .foregroundStyle(SynoraSemanticColor.inkSecondary.color)
+      .multilineTextAlignment(.center)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .padding(SynoraSpacing.xl)
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier("record-empty")
+  }
+}

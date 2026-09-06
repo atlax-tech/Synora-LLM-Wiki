@@ -12,7 +12,6 @@ struct ShellRootView: View {
     .rawValue
   @SceneStorage("synora.shell.inspector-mode") private var persistedInspectorMode = InspectorMode
     .context.rawValue
-  @State private var searchText = ""
   @State private var searchPresented = false
 
   init() {
@@ -30,14 +29,14 @@ struct ShellRootView: View {
               max: ShellLayoutPolicy.sidebarWidth
             )
         } content: {
-          ShellRecordListPlaceholder()
+          RecordListView(model: model)
             .navigationSplitViewColumnWidth(
               min: ShellLayoutPolicy.recordListWidth,
               ideal: ShellLayoutPolicy.recordListWidth,
               max: ShellLayoutPolicy.recordListWidth
             )
         } detail: {
-          ShellEditorPlaceholder()
+          RecordEditorView(model: model)
             .frame(minWidth: ShellLayoutPolicy.editorMinimumWidth)
         }
         .inspector(isPresented: inspectorBinding) {
@@ -49,7 +48,7 @@ struct ShellRootView: View {
             )
         }
         .searchable(
-          text: $searchText,
+          text: searchBinding,
           isPresented: $searchPresented,
           placement: .toolbar,
           prompt: "Search records"
@@ -87,6 +86,7 @@ struct ShellRootView: View {
             recordKind: RecordKind(rawValue: persistedRecordKind) ?? .note,
             inspectorMode: InspectorMode(rawValue: persistedInspectorMode) ?? .context
           )
+          model.loadRecordsIfNeeded()
           model.reconcile(width: geometry.size.width)
         }
         .onChange(of: geometry.size.width) { _, width in
@@ -115,7 +115,7 @@ struct ShellRootView: View {
     .safeAreaInset(edge: .bottom, spacing: 0) {
       ShellStatusBar(
         selectedRecordKind: model.selectedRecordKind,
-        hasSelection: false,
+        hasSelection: model.selectedRecord(for: model.selectedRecordKind) != nil,
         isInspectorSpaceLimited: !model.inspectorToggleEnabled
       )
     }
@@ -145,6 +145,13 @@ struct ShellRootView: View {
     )
   }
 
+  private var searchBinding: Binding<String> {
+    Binding(
+      get: { model.searchQuery },
+      set: { model.setSearchQuery($0) }
+    )
+  }
+
   private var columnVisibilityBinding: Binding<NavigationSplitViewVisibility> {
     Binding(
       get: {
@@ -166,39 +173,6 @@ struct ShellRootView: View {
         persistedInspectorVisible = presented
       }
     )
-  }
-}
-
-private struct ShellRecordListPlaceholder: View {
-  var body: some View {
-    VStack(alignment: .leading, spacing: SynoraSpacing.md) {
-      Text("Records")
-        .font(SynoraTypography.sectionTitle.font)
-        .foregroundStyle(SynoraSemanticColor.inkPrimary.color)
-      Spacer()
-    }
-    .padding(SynoraSpacing.md)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .background(SynoraSemanticColor.list.color)
-    .accessibilityIdentifier("record-list")
-  }
-}
-
-private struct ShellEditorPlaceholder: View {
-  var body: some View {
-    VStack(alignment: .leading, spacing: SynoraSpacing.md) {
-      Text("Select a record")
-        .font(SynoraTypography.documentTitle.font)
-        .foregroundStyle(SynoraSemanticColor.inkPrimary.color)
-      Text("Your local records will appear here.")
-        .font(SynoraTypography.body.font)
-        .foregroundStyle(SynoraSemanticColor.inkSecondary.color)
-      Spacer()
-    }
-    .padding(SynoraSpacing.xxl)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .background(SynoraSemanticColor.canvas.color)
-    .accessibilityIdentifier("editor")
   }
 }
 
