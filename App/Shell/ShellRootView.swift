@@ -49,24 +49,6 @@ struct ShellRootView: View {
           prompt: "Search records"
         )
         .toolbar {
-          ToolbarItemGroup(placement: .navigation) {
-            Button {
-              model.toggleSidebar()
-            } label: {
-              Label("Toggle Sidebar", systemImage: "sidebar.left")
-            }
-            .help("Toggle Sidebar (⌘⇧S)")
-            .accessibilityIdentifier("toggle-sidebar")
-
-            Button {
-              searchPresented = true
-            } label: {
-              Label("Search", systemImage: "magnifyingglass")
-            }
-            .help("Focus Search (⌘F)")
-            .accessibilityIdentifier("search")
-          }
-
           ToolbarSpacer(.flexible)
 
           ToolbarItemGroup(placement: .primaryAction) {
