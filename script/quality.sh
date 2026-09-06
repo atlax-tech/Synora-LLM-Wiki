@@ -100,12 +100,41 @@ for _ in {1..30}; do
   fi
   sleep 1
 done
-for pid in $(pgrep -f "$probe_host_app" || true); do kill "$pid" 2>/dev/null || true; done
 if [[ "$fixture_ok" != true ]]; then
   print -u2 "XPC guest fixture did not succeed: $(cat "$fixture_report" 2>/dev/null || echo 'no report')"
   exit 1
 fi
 print "xpc guest fixture succeeded: $(cat "$fixture_report")"
+
+# Crash/reconnect drill: SIGKILL the service, verify the host survives, then prove
+# launchd respawns the service for the next run.
+service_pid=$(pgrep -f "SynoraAgentServiceProbe.xpc" | head -1)
+if [[ -z "$service_pid" ]]; then
+  print -u2 "XPC service process not found for crash drill"
+  exit 1
+fi
+kill -9 "$service_pid"
+sleep 1
+if ! pgrep -f "$probe_host_app" >/dev/null; then
+  print -u2 "probe host died together with its XPC service"
+  exit 1
+fi
+rm -f "$fixture_report"
+open "$probe_host_app"
+fixture_ok=false
+for _ in {1..30}; do
+  if [[ -f "$fixture_report" ]] && grep -q '"status" *: *"success"' "$fixture_report"; then
+    fixture_ok=true
+    break
+  fi
+  sleep 1
+done
+for pid in $(pgrep -f "$probe_host_app" || true); do kill "$pid" 2>/dev/null || true; done
+if [[ "$fixture_ok" != true ]]; then
+  print -u2 "XPC service did not reconnect after crash: $(cat "$fixture_report" 2>/dev/null || echo 'no report')"
+  exit 1
+fi
+print "xpc service crash/reconnect drill succeeded"
 
 # Sentinel scan: planted test content and the reserved secret marker must never
 # reach logs, xcresults, entitlements or the release bundle. Test sources embed the
