@@ -12,7 +12,7 @@ final class SynoraAgentService: NSObject, NSXPCListenerDelegate, AgentServicePro
   private let lock = NSLock()
   private var active = Set<String>()
   private var cancelled = Set<String>()
-  private var cancelFlags: [String: UnsafeMutablePointer<Int32>] = [:]
+  private var cancelFlags: [String: CancellationToken] = [:]
 
   func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection)
     -> Bool
@@ -40,7 +40,8 @@ final class SynoraAgentService: NSObject, NSXPCListenerDelegate, AgentServicePro
       let decoded = try JSONDecoder().decode(SkillRequest.self, from: request)
       responseLimit = max(
         decoded.policy.maxResponseBytes, SkillPolicyEvaluator.minimumResponseBytes)
-      if begin(decoded.requestID.uuidString) {
+      let token = CancellationToken()
+      if begin(decoded.requestID.uuidString, token: token) {
         defer { finish(decoded.requestID.uuidString) }
         do {
           try SkillPolicyEvaluator().validate(decoded, now: Date())
@@ -48,6 +49,8 @@ final class SynoraAgentService: NSObject, NSXPCListenerDelegate, AgentServicePro
             result = SkillServiceResult(code: "cancelled", message: "request cancelled")
           } else if runGuest(decoded) {
             result = SkillServiceResult(code: "success", message: "guest start completed")
+          } else if isCancelled(decoded.requestID.uuidString) {
+            result = SkillServiceResult(code: "cancelled", message: "request cancelled")
           } else {
             result = SkillServiceResult(
               code: "runtimeFailure",
@@ -75,7 +78,9 @@ final class SynoraAgentService: NSObject, NSXPCListenerDelegate, AgentServicePro
     let accepted = active.contains(requestID)
     if accepted {
       cancelled.insert(requestID)
-      cancelFlags[requestID]?.pointee = 1
+      if let flag = cancelFlags[requestID] {
+        WasmtimeProbe.setCancelFlag(flag.pointer)
+      }
     }
     lock.unlock()
     reply(accepted)
@@ -87,11 +92,12 @@ final class SynoraAgentService: NSObject, NSXPCListenerDelegate, AgentServicePro
     return cancelled.contains(requestID)
   }
 
-  private func begin(_ requestID: String) -> Bool {
+  private func begin(_ requestID: String, token: CancellationToken) -> Bool {
     lock.lock()
     defer { lock.unlock() }
     guard cancelled.remove(requestID) == nil else { return false }
     active.insert(requestID)
+    cancelFlags[requestID] = token
     return true
   }
 
@@ -99,6 +105,7 @@ final class SynoraAgentService: NSObject, NSXPCListenerDelegate, AgentServicePro
     lock.lock()
     active.remove(requestID)
     cancelled.remove(requestID)
+    cancelFlags.removeValue(forKey: requestID)
     lock.unlock()
   }
 
@@ -125,37 +132,150 @@ final class SynoraAgentService: NSObject, NSXPCListenerDelegate, AgentServicePro
 
   private func runGuest(_ request: SkillRequest) -> Bool {
     lock.lock()
-    let flag = cancelFlags[request.requestID.uuidString]
+    let flag = cancelFlags[request.requestID.uuidString]?.pointer
     lock.unlock()
     guard let frameworks = Bundle.main.privateFrameworksURL else { return false }
     let library = frameworks.appendingPathComponent("libwasmtime.dylib")
     let deadline = max(0, request.deadline.timeIntervalSinceNow)
-    let evaluator = SkillPolicyEvaluator()
-    let now = Date()
+    let broker = HostCapabilityBroker(
+      requestID: request.requestID, policy: request.policy, deadline: request.deadline)
     return WasmtimeProbe.runStart(
       module: request.module,
       library: library.path,
       under: frameworks.path,
       deadlineNanos: UInt64(deadline * 1_000_000_000),
       cancelFlag: flag,
-      // The service is the only capability broker: requests must match the request
-      // policy, loopback targets must be allowlisted, and everything else is denied.
-      broker: { capability, target in
-        guard let capabilityValue = SkillCapability(rawValue: capability) else {
+      broker: broker.request)
+  }
+}
+
+private final class CancellationToken: @unchecked Sendable {
+  let pointer: UnsafeMutablePointer<Int32>
+
+  init() {
+    pointer = .allocate(capacity: 1)
+    pointer.initialize(to: 0)
+  }
+
+  deinit {
+    pointer.deinitialize(count: 1)
+    pointer.deallocate()
+  }
+}
+
+private final class HostCapabilityBroker: @unchecked Sendable {
+  private let root: URL
+  private let policy: CapabilityPolicy
+  private let deadline: Date
+  private let evaluator = SkillPolicyEvaluator()
+
+  init(requestID: UUID, policy: CapabilityPolicy, deadline: Date) {
+    root = SkillPathPolicy.temporaryRoot(
+      for: requestID, inside: FileManager.default.temporaryDirectory)
+    self.policy = policy
+    self.deadline = deadline
+    try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+  }
+
+  func request(capability: String, target: String) -> Int32 {
+    guard let capability = SkillCapability(rawValue: capability) else { return 1 }
+    do {
+      try evaluator.authorize(
+        capability: capability, policy: policy, now: Date(), deadline: deadline)
+      switch capability {
+      case .readTemporaryDirectory:
+        guard let directory = SkillPathPolicy.resolveTemporaryRead(target, root: root) else {
           return 1
         }
-        do {
-          try evaluator.authorize(
-            capability: capabilityValue, policy: request.policy, now: now,
-            deadline: request.deadline)
-          if capabilityValue == .networkLoopback {
-            try evaluator.authorizeNetwork(host: target, policy: request.policy)
-          }
-          return 0
-        } catch {
-          return 1
-        }
-      })
+        _ = try FileManager.default.contentsOfDirectory(
+          at: directory, includingPropertiesForKeys: [.isSymbolicLinkKey])
+        return 0
+      case .networkLoopback:
+        try evaluator.authorizeNetwork(host: target, policy: policy)
+        guard SkillPathPolicy.allowsLoopbackHost(target) else { return 1 }
+        return LoopbackHTTPProbe.roundTrip(maxResponseBytes: policy.maxResponseBytes) ? 0 : 1
+      case .writeProposal:
+        return 1
+      }
+    } catch {
+      return 1
+    }
+  }
+}
+
+private enum LoopbackHTTPProbe {
+  static func roundTrip(maxResponseBytes: Int) -> Bool {
+    guard maxResponseBytes >= 1 else { return false }
+    let server = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+    guard server >= 0 else { return false }
+    defer { Darwin.close(server) }
+
+    var address = sockaddr_in()
+    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_port = 0
+    address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+    let bound = withUnsafePointer(to: &address) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        Darwin.bind(server, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+      }
+    }
+    guard bound == 0, Darwin.listen(server, 1) == 0 else { return false }
+    var actual = sockaddr_in()
+    var actualLength = socklen_t(MemoryLayout<sockaddr_in>.size)
+    let named = withUnsafeMutablePointer(to: &actual) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        Darwin.getsockname(server, $0, &actualLength)
+      }
+    }
+    guard named == 0 else { return false }
+    let port = UInt16(bigEndian: actual.sin_port)
+
+    let group = DispatchGroup()
+    group.enter()
+    DispatchQueue.global(qos: .utility).async {
+      defer { group.leave() }
+      let client = Darwin.accept(server, nil, nil)
+      guard client >= 0 else { return }
+      defer { Darwin.close(client) }
+      var request = [UInt8](repeating: 0, count: 512)
+      _ = request.withUnsafeMutableBytes { Darwin.read(client, $0.baseAddress, $0.count) }
+      let body = Data("synora-loopback".utf8)
+      let response =
+        Data(
+          "HTTP/1.1 200 OK\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n".utf8
+        ) + body
+      _ = response.withUnsafeBytes { Darwin.write(client, $0.baseAddress, $0.count) }
+    }
+
+    let client = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+    guard client >= 0 else { return false }
+    defer { Darwin.close(client) }
+    var destination = sockaddr_in()
+    destination.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    destination.sin_family = sa_family_t(AF_INET)
+    destination.sin_port = port.bigEndian
+    destination.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+    let connected = withUnsafePointer(to: &destination) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        Darwin.connect(client, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+      }
+    }
+    guard connected == 0 else { return false }
+    let request = Data("GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n".utf8)
+    _ = request.withUnsafeBytes { Darwin.write(client, $0.baseAddress, $0.count) }
+    var response = Data()
+    var buffer = [UInt8](repeating: 0, count: min(maxResponseBytes + 1024, 64 * 1024))
+    while response.count <= maxResponseBytes + 1024 {
+      let readCount = buffer.withUnsafeMutableBytes {
+        Darwin.read(client, $0.baseAddress, $0.count)
+      }
+      guard readCount > 0 else { break }
+      response.append(contentsOf: buffer.prefix(readCount))
+    }
+    let completed = group.wait(timeout: .now() + 1) == .success
+    return completed && response.count <= maxResponseBytes + 1024
+      && response.range(of: Data("synora-loopback".utf8)) != nil
   }
 }
 

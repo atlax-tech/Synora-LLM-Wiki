@@ -17,6 +17,19 @@ func fixedIDsAndRevisionAreDeterministic() throws {
 }
 
 @Test
+func uuidGeneratorProducesVersionFourUniqueIDs() {
+  let generator = UUIDGenerator()
+  let ids = (0..<10_000).map { _ in generator.next() }
+  #expect(Set(ids).count == ids.count)
+  #expect(
+    ids.allSatisfy { uuid in
+      withUnsafeBytes(of: uuid.uuid) { bytes in
+        bytes[6] >> 4 == 4 && bytes[8] & 0xC0 == 0x80
+      }
+    })
+}
+
+@Test
 func operationHashUsesCanonicalBytes() {
   let id = UUID(uuidString: "00000000-0000-4000-8000-000000000001")!
   let entity = UUID(uuidString: "00000000-0000-4000-8000-000000000002")!
@@ -45,4 +58,9 @@ func operationHashUsesCanonicalBytes() {
   )
   #expect(left.canonicalBytes == right.canonicalBytes)
   #expect(left.hash == right.hash)
+  #expect(
+    String(decoding: left.canonicalBytes, as: UTF8.self)
+      == "{\"entityID\":\"00000000-0000-4000-8000-000000000002\",\"entityRevision\":1,\"id\":\"00000000-0000-4000-8000-000000000001\",\"kind\":\"record.save\",\"payload\":\"e30=\",\"previousHash\":null,\"sequence\":1,\"timestamp\":1,\"transactionID\":1}"
+  )
+  #expect(left.hash == "3f23cfd87d3fb1d6333e02fde4f1b7eb8ef9b18997d0b05b6179128ec899ef86")
 }

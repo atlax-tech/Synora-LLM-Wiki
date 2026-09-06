@@ -15,6 +15,8 @@ typedef struct synora_broker {
 
 bool synora_wasmtime_library_available(const char *path, const char *allowed_root);
 
+void synora_cancel_flag_set(int *flag);
+
 /* Runs the guest start function under epoch interruption. `deadline_ns` bounds execution
  * (0 = unbounded); `cancel` may point to a flag polled every 10 ms (NULL = no cancel).
  * `broker` registers the "synora"."request" host import (NULL = no import registered).

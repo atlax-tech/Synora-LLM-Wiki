@@ -13,6 +13,7 @@ run_textkit() {
   "$root_dir/script/bootstrap_wasmtime.sh"
   xcodebuild -project "$root_dir/SynoraWiki.xcodeproj" -scheme SynoraP0Probes \
     -configuration Debug -derivedDataPath "$derived_data/p0-probes" \
+    -destination 'platform=macOS,arch=arm64' \
     CODE_SIGNING_ALLOWED=YES build
 }
 
@@ -41,7 +42,8 @@ run_benchmark() {
   swift run --package-path "$root_dir/Packages/SynoraCore" \
     --scratch-path "$scratch_path" SynoraBenchmarkGenerator \
     --profile smoke --seed 20260905 --output "$second_output" >/dev/null
-  for file in manifest.json records.jsonl blocks.jsonl assets/payload.tiff; do
+  for file in manifest.json records.jsonl blocks.jsonl assets/payload.bin \
+    assets/preview.png assets/preview.pdf assets/preview.wav assets/preview.mp4; do
     cmp "$output/$file" "$second_output/$file"
   done
   local first_hash
@@ -50,6 +52,8 @@ run_benchmark() {
     --scratch-path "$scratch_path" SynoraBenchmarkGenerator \
     --profile smoke --seed 20260905 --output "$output" --resume >/dev/null
   [[ "$first_hash" == "$(shasum -a 256 "$output/manifest.json" | awk '{print $1}')" ]]
+  swift test --package-path "$root_dir/Packages/SynoraCore" \
+    --scratch-path "$scratch_path" --filter SynoraBenchmarkTests
   rm -rf "$second_output"
   print "benchmark smoke verified: $output"
 }

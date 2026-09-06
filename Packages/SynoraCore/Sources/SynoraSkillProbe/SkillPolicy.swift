@@ -71,6 +71,26 @@ public enum SkillPolicyError: Error, Equatable, Sendable {
   case responseTooLarge(actual: Int, maximum: Int)
 }
 
+/// Resolves the only filesystem capability to a service-owned directory. The guest never
+/// receives a host path; `/tmp` is a logical mount name mapped by the host broker.
+public enum SkillPathPolicy {
+  public static func temporaryRoot(for requestID: UUID, inside directory: URL) -> URL {
+    directory.appendingPathComponent("synora-skill-\(requestID.uuidString)", isDirectory: true)
+  }
+
+  public static func resolveTemporaryRead(_ target: String, root: URL) -> URL? {
+    guard target == "/tmp" else { return nil }
+    let standardized = root.standardizedFileURL
+    guard (try? standardized.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true
+    else { return nil }
+    return standardized
+  }
+
+  public static func allowsLoopbackHost(_ host: String) -> Bool {
+    host == "127.0.0.1"
+  }
+}
+
 public struct SkillPolicyEvaluator: Sendable {
   public static let minimumResponseBytes = 256
 
@@ -134,6 +154,10 @@ public enum WasmtimeProbe {
         synora_wasmtime_library_available(pathPointer, rootPointer)
       }
     }
+  }
+
+  public static func setCancelFlag(_ flag: UnsafeMutablePointer<Int32>) {
+    synora_cancel_flag_set(flag)
   }
 
   public static func runStart(

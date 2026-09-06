@@ -2,10 +2,35 @@
 set -euo pipefail
 
 root_dir="${0:A:h}/.."
-artifact_dir="${SYNORA_ARTIFACT_DIR:-${TMPDIR:-/private/tmp}/synora-wiki-quality-$$}"
+run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+artifact_dir="${SYNORA_ARTIFACT_DIR:-${TMPDIR:-/private/tmp}/synora-wiki-quality-$run_id}"
 derived_data="$artifact_dir/xcode"
 mkdir -p "$artifact_dir"
 cd "$root_dir"
+
+stop_exact_process() {
+  local executable="$1"
+  local pid
+  while read -r pid; do
+    [[ -n "$pid" ]] || continue
+    kill "$pid" 2>/dev/null || true
+  done < <(pgrep -f -- "$executable" || true)
+  for _ in {1..20}; do
+    pgrep -f -- "$executable" >/dev/null 2>&1 || return 0
+    sleep 0.1
+  done
+  while read -r pid; do
+    [[ -n "$pid" ]] || continue
+    kill -9 "$pid" 2>/dev/null || true
+  done < <(pgrep -f -- "$executable" || true)
+}
+
+probe_host_dir="$HOME/Library/Caches/SynoraProbeHost"
+probe_host_app="$probe_host_dir/SynoraP0Probes.app"
+probe_host_binary="$probe_host_app/Contents/MacOS/SynoraP0Probes"
+probe_service_binary="$probe_host_app/Contents/XPCServices/SynoraAgentServiceProbe.xpc/Contents/MacOS/SynoraAgentServiceProbe"
+stop_exact_process "$probe_host_binary"
+stop_exact_process "$probe_service_binary"
 
 "$root_dir/script/bootstrap_wasmtime.sh"
 
@@ -25,9 +50,11 @@ git diff --check
 xcrun swift-format lint --recursive --parallel --strict \
   App Packages/SynoraCore/Sources Packages/SynoraCore/Tests Tests
 
-swift build --package-path Packages/SynoraCore --scratch-path "$artifact_dir/swiftpm-build"
+swift build --package-path Packages/SynoraCore --scratch-path "$artifact_dir/swiftpm-build" \
+  -Xswiftc -warnings-as-errors
 swift test --package-path Packages/SynoraCore --scratch-path "$artifact_dir/swiftpm-test" \
-  --skip SynoraStoreHeavyTests --enable-code-coverage | tee "$artifact_dir/swift-test.log"
+  --skip SynoraStoreHeavyTests --enable-code-coverage \
+  -Xswiftc -warnings-as-errors | tee "$artifact_dir/swift-test.log"
 
 profdata=$(find "$artifact_dir/swiftpm-test" -name default.profdata -print -quit)
 test_binary=$(find "$artifact_dir/swiftpm-test" -path '*SynoraCorePackageTests.xctest/Contents/MacOS/SynoraCorePackageTests' -print -quit)
@@ -38,9 +65,13 @@ xcrun llvm-cov report "$test_binary" -instr-profile "$profdata" \
 line_coverage=$(awk '/^TOTAL[[:space:]]/ { gsub(/%/, "", $10); print $10 }' "$artifact_dir/swift-coverage.txt")
 [[ -n "$line_coverage" && "$line_coverage" != "-" ]]
 awk -v coverage="$line_coverage" 'BEGIN { exit !(coverage >= 85) }'
+region_coverage=$(awk '/^TOTAL[[:space:]]/ { gsub(/%/, "", $4); print $4 }' "$artifact_dir/swift-coverage.txt")
+[[ -n "$region_coverage" && "$region_coverage" != "-" ]]
+awk -v coverage="$region_coverage" 'BEGIN { exit !(coverage >= 75) }'
+print "coverage line=${line_coverage}% region=${region_coverage}%" | tee "$artifact_dir/coverage-status.txt"
 branch_coverage=$(awk '/^TOTAL[[:space:]]/ { gsub(/%/, "", $13); print $13 }' "$artifact_dir/swift-coverage.txt")
 if [[ "$branch_coverage" == "-" ]]; then
-  print "coverage branches: unavailable in SwiftPM llvm-cov output" | tee "$artifact_dir/coverage-status.txt"
+  print "coverage branches: unavailable in SwiftPM llvm-cov output" | tee -a "$artifact_dir/coverage-status.txt"
 else
   awk -v coverage="$branch_coverage" 'BEGIN { exit !(coverage >= 75) }'
 fi
@@ -66,10 +97,10 @@ xcodebuild \
   build | tee "$artifact_dir/xcode-build-probes.log"
 
 # Register the probe host under a stable path so LaunchServices can resolve it.
-probe_host_dir="$HOME/Library/Caches/SynoraProbeHost"
-probe_host_app="$probe_host_dir/SynoraP0Probes.app"
 mkdir -p "$probe_host_dir"
-rm -rf "$probe_host_app"
+if [[ -e "$probe_host_app" ]]; then
+  rm -rf "$probe_host_app"
+fi
 cp -R "$derived_data/Probes/Build/Products/Debug/SynoraP0Probes.app" "$probe_host_app"
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 "$lsregister" -f "$probe_host_app"
@@ -91,10 +122,14 @@ release_app="$derived_data/Release/Build/Products/Release/SynoraWiki.app"
 # the fixture itself and persists the outcome in its container temp directory.
 fixture_report="$HOME/Library/Containers/tech.atlax.SynoraWiki.P0Probes/Data/tmp/synora-xpc-fixture.json"
 rm -f "$fixture_report"
-open "$probe_host_app"
+fixture_started_at=$(date +%s)
+open -n "$probe_host_app"
 fixture_ok=false
 for _ in {1..30}; do
-  if [[ -f "$fixture_report" ]] && grep -q '"status" *: *"success"' "$fixture_report"; then
+  report_mtime=$(stat -f %m "$fixture_report" 2>/dev/null || print 0)
+  if [[ -f "$fixture_report" ]] && [[ "$report_mtime" -ge "$fixture_started_at" ]] \
+    && grep -Eq '"status"[[:space:]]*:[[:space:]]*"success"' "$fixture_report" \
+    && grep -Eq '"pid"[[:space:]]*:[[:space:]]*[0-9]+' "$fixture_report"; then
     fixture_ok=true
     break
   fi
@@ -108,28 +143,38 @@ print "xpc guest fixture succeeded: $(cat "$fixture_report")"
 
 # Crash/reconnect drill: SIGKILL the service, verify the host survives, then prove
 # launchd respawns the service for the next run.
-service_pid=$(pgrep -f "SynoraAgentServiceProbe.xpc" | head -1)
+service_pid=$(pgrep -f -- "$probe_service_binary" | head -1)
 if [[ -z "$service_pid" ]]; then
   print -u2 "XPC service process not found for crash drill"
   exit 1
 fi
+host_pid=$(pgrep -f -- "$probe_host_binary" | head -1)
 kill -9 "$service_pid"
 sleep 1
-if ! pgrep -f "$probe_host_app" >/dev/null; then
+if [[ -z "$host_pid" ]] || ! pgrep -f -- "$probe_host_binary" >/dev/null; then
   print -u2 "probe host died together with its XPC service"
   exit 1
 fi
 rm -f "$fixture_report"
-open "$probe_host_app"
+fixture_started_at=$(date +%s)
+open -n "$probe_host_app"
 fixture_ok=false
 for _ in {1..30}; do
-  if [[ -f "$fixture_report" ]] && grep -q '"status" *: *"success"' "$fixture_report"; then
+  report_mtime=$(stat -f %m "$fixture_report" 2>/dev/null || print 0)
+  if [[ -f "$fixture_report" ]] && [[ "$report_mtime" -ge "$fixture_started_at" ]] \
+    && grep -Eq '"status"[[:space:]]*:[[:space:]]*"success"' "$fixture_report" \
+    && grep -Eq '"pid"[[:space:]]*:[[:space:]]*[0-9]+' "$fixture_report"; then
     fixture_ok=true
     break
   fi
   sleep 1
 done
-for pid in $(pgrep -f "$probe_host_app" || true); do kill "$pid" 2>/dev/null || true; done
+new_service_pid=$(pgrep -f -- "$probe_service_binary" | head -1)
+[[ -n "$new_service_pid" && "$new_service_pid" != "$service_pid" ]] || {
+  print -u2 "XPC service did not respawn with a new PID"
+  exit 1
+}
+for pid in $(pgrep -f -- "$probe_host_binary" || true); do kill "$pid" 2>/dev/null || true; done
 if [[ "$fixture_ok" != true ]]; then
   print -u2 "XPC service did not reconnect after crash: $(cat "$fixture_report" 2>/dev/null || echo 'no report')"
   exit 1

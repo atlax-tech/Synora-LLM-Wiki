@@ -3,6 +3,20 @@ import Testing
 
 @testable import SynoraSkillProbe
 
+private final class CancelBox: @unchecked Sendable {
+  let pointer: UnsafeMutablePointer<Int32>
+
+  init() {
+    pointer = .allocate(capacity: 1)
+    pointer.initialize(to: 0)
+  }
+
+  deinit {
+    pointer.deinitialize(count: 1)
+    pointer.deallocate()
+  }
+}
+
 @Test
 func policyRejectsUnlistedCapabilitiesAndNonLoopbackHosts() {
   let evaluator = SkillPolicyEvaluator()
@@ -18,6 +32,21 @@ func policyRejectsUnlistedCapabilitiesAndNonLoopbackHosts() {
       deadline: Date(timeIntervalSince1970: 1)
     )
   }
+}
+
+@Test
+func hostPathPolicyMapsOnlyTheLogicalTemporaryRoot() throws {
+  let root = FileManager.default.temporaryDirectory
+    .appendingPathComponent("synora-skill-root-\(UUID().uuidString)", isDirectory: true)
+  try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: root) }
+  #expect(SkillPathPolicy.resolveTemporaryRead("/tmp", root: root) == root)
+  #expect(SkillPathPolicy.resolveTemporaryRead("/tmp/../etc/hosts", root: root) == nil)
+  #expect(
+    SkillPathPolicy.resolveTemporaryRead(
+      FileManager.default.homeDirectoryForCurrentUser.path, root: root) == nil)
+  #expect(SkillPathPolicy.allowsLoopbackHost("127.0.0.1"))
+  #expect(!SkillPathPolicy.allowsLoopbackHost("localhost"))
 }
 
 @Test
@@ -111,15 +140,15 @@ func deadlineTerminatesInfiniteLoopGuest() throws {
 func cancelFlagTerminatesGuestWithin100Milliseconds() throws {
   guard let root = ProcessInfo.processInfo.environment["SYNORA_WASMTIME_ROOT"] else { return }
   let library = URL(fileURLWithPath: root).appendingPathComponent("lib/libwasmtime.dylib").path
-  let flag = UnsafeMutablePointer<Int32>.allocate(capacity: 1)
-  defer { flag.deallocate() }
-  flag.initialize(to: 0)
-  DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { flag.pointee = 1 }
+  let flag = CancelBox()
+  DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) {
+    WasmtimeProbe.setCancelFlag(flag.pointer)
+  }
   let started = Date()
   #expect(
     !WasmtimeProbe.runStart(
       module: infiniteLoopModule, library: library, under: root,
-      deadlineNanos: 10_000_000_000, cancelFlag: flag))
+      deadlineNanos: 10_000_000_000, cancelFlag: flag.pointer))
   let elapsed = Date().timeIntervalSince(started)
   #expect(elapsed >= 0.05)
   #expect(elapsed < 1.0)

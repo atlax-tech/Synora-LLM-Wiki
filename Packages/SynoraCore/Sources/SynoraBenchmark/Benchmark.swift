@@ -5,17 +5,9 @@ public enum BenchmarkProfile: String, Codable, Sendable {
   case smoke
   case full
 
-  public var recordCount: Int {
-    self == .full ? 10_000 : 10
-  }
-
-  public var blockCount: Int {
-    self == .full ? 100_000 : 100
-  }
-
-  public var assetBytes: Int64 {
-    self == .full ? 20 * 1024 * 1024 * 1024 : 1024 * 1024
-  }
+  public var recordCount: Int { self == .full ? 10_000 : 10 }
+  public var blockCount: Int { self == .full ? 100_000 : 100 }
+  public var assetBytes: Int64 { self == .full ? 20 * 1024 * 1024 * 1024 : 1024 * 1024 }
 }
 
 public struct BenchmarkManifest: Codable, Hashable, Sendable {
@@ -27,6 +19,7 @@ public struct BenchmarkManifest: Codable, Hashable, Sendable {
   public let logicalAssetBytes: Int64
   public let physicalBytes: Int64
   public let files: [String: String]
+  public let media: [String: String]
 
   public init(
     profile: BenchmarkProfile,
@@ -35,9 +28,10 @@ public struct BenchmarkManifest: Codable, Hashable, Sendable {
     blocks: Int,
     logicalAssetBytes: Int64,
     physicalBytes: Int64,
-    files: [String: String]
+    files: [String: String],
+    media: [String: String] = BenchmarkGenerator.mediaPaths
   ) {
-    schemaVersion = 1
+    schemaVersion = 2
     self.profile = profile
     self.seed = seed
     self.records = records
@@ -45,6 +39,7 @@ public struct BenchmarkManifest: Codable, Hashable, Sendable {
     self.logicalAssetBytes = logicalAssetBytes
     self.physicalBytes = physicalBytes
     self.files = files
+    self.media = media
   }
 }
 
@@ -62,6 +57,13 @@ public enum BenchmarkError: Error, CustomStringConvertible, Equatable, Sendable 
 
 public struct BenchmarkGenerator: Sendable {
   public static let defaultSeed: UInt64 = 2_026_090_5
+  public static let mediaPaths: [String: String] = [
+    "image": "assets/preview.png",
+    "document": "assets/preview.pdf",
+    "audio": "assets/preview.wav",
+    "video": "assets/preview.mp4",
+  ]
+
   private static let chunkSize = 8 * 1024 * 1024
 
   public init() {}
@@ -86,23 +88,32 @@ public struct BenchmarkGenerator: Sendable {
 
     let recordsURL = output.appendingPathComponent("records.jsonl")
     let blocksURL = output.appendingPathComponent("blocks.jsonl")
-    let assetURL = output.appendingPathComponent("assets/payload.tiff")
-    try FileManager.default.createDirectory(
-      at: assetURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let assetsDirectory = output.appendingPathComponent("assets", isDirectory: true)
+    try FileManager.default.createDirectory(at: assetsDirectory, withIntermediateDirectories: true)
     try writeJSONLines(to: recordsURL, count: profile.recordCount, seed: seed, prefix: "record")
     try writeJSONLines(to: blocksURL, count: profile.blockCount, seed: seed, prefix: "block")
-    try writeAsset(to: assetURL, byteCount: profile.assetBytes, seed: seed)
 
-    let files = [
+    let media = try writeMediaAssets(to: assetsDirectory)
+    let mediaBytes = media.reduce(Int64(0)) { $0 + $1.byteCount }
+    guard profile.assetBytes >= mediaBytes else {
+      throw BenchmarkError.mismatch("profile asset budget is smaller than media fixtures")
+    }
+    let payloadURL = assetsDirectory.appendingPathComponent("payload.bin")
+    try writePayload(to: payloadURL, byteCount: profile.assetBytes - mediaBytes, seed: seed)
+
+    var files = [
       "records.jsonl": try sha256(recordsURL),
       "blocks.jsonl": try sha256(blocksURL),
-      "assets/payload.tiff": try sha256(assetURL),
     ]
-    let physicalBytes = try [recordsURL, blocksURL, assetURL].reduce(Int64(0)) {
-      $0
-        + Int64(
-          (try FileManager.default.attributesOfItem(atPath: $1.path)[.size] as? NSNumber)?
-            .int64Value ?? 0)
+    for fixture in media {
+      files[fixture.path] = try sha256(fixture.url)
+    }
+    files["assets/payload.bin"] = try sha256(payloadURL)
+
+    let allURLs = [recordsURL, blocksURL] + media.map(\.url) + [payloadURL]
+    let physicalBytes = try allURLs.reduce(Int64(0)) { total, url in
+      let size = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber
+      return total + (size?.int64Value ?? 0)
     }
     let manifest = BenchmarkManifest(
       profile: profile,
@@ -115,13 +126,12 @@ public struct BenchmarkGenerator: Sendable {
     )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-    let data = try encoder.encode(manifest)
-    try atomicWrite(data, to: manifestURL)
+    try atomicWrite(encoder.encode(manifest), to: manifestURL)
     return manifest
   }
 
   public func verify(_ manifest: BenchmarkManifest, in output: URL) throws {
-    guard manifest.schemaVersion == 1 else {
+    guard manifest.schemaVersion == 2 else {
       throw BenchmarkError.mismatch("unsupported benchmark manifest schema")
     }
     guard manifest.records == manifest.profile.recordCount,
@@ -130,13 +140,18 @@ public struct BenchmarkGenerator: Sendable {
     else { throw BenchmarkError.mismatch("manifest counts do not match profile") }
 
     let expectedPaths: Set<String> = [
-      "records.jsonl", "blocks.jsonl", "assets/payload.tiff",
+      "records.jsonl", "blocks.jsonl", "assets/payload.bin", "assets/preview.png",
+      "assets/preview.pdf", "assets/preview.wav", "assets/preview.mp4",
     ]
     guard Set(manifest.files.keys) == expectedPaths else {
       throw BenchmarkError.mismatch("manifest file set does not match profile")
     }
+    guard manifest.media == Self.mediaPaths else {
+      throw BenchmarkError.mismatch("manifest media map does not match profile")
+    }
 
     var physicalBytes: Int64 = 0
+    var logicalAssetBytes: Int64 = 0
     for (path, expectedHash) in manifest.files {
       let file = output.appendingPathComponent(path)
       guard FileManager.default.fileExists(atPath: file.path) else {
@@ -145,16 +160,104 @@ public struct BenchmarkGenerator: Sendable {
       guard try sha256(file) == expectedHash else {
         throw BenchmarkError.mismatch("checksum mismatch: \(path)")
       }
-      let size = try FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber
-      guard let size else {
-        throw BenchmarkError.mismatch("missing file size: \(path)")
-      }
+      guard
+        let size = try FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber
+      else { throw BenchmarkError.mismatch("missing file size: \(path)") }
       physicalBytes += size.int64Value
+      if path.hasPrefix("assets/") { logicalAssetBytes += size.int64Value }
+    }
+    guard logicalAssetBytes == manifest.logicalAssetBytes else {
+      throw BenchmarkError.mismatch("manifest logical asset bytes do not match files")
     }
     guard physicalBytes == manifest.physicalBytes else {
       throw BenchmarkError.mismatch("manifest physical bytes do not match files")
     }
   }
+
+  private struct MediaFile {
+    let path: String
+    let url: URL
+    let byteCount: Int64
+  }
+
+  private func writeMediaAssets(to directory: URL) throws -> [MediaFile] {
+    let fixtures: [(String, Data)] = [
+      ("preview.png", Self.pngFixture),
+      ("preview.pdf", Self.pdfFixture),
+      ("preview.wav", Self.wavFixture),
+      ("preview.mp4", Self.mp4Fixture),
+    ]
+    return try fixtures.map { name, data in
+      let url = directory.appendingPathComponent(name)
+      try data.write(to: url, options: .atomic)
+      return MediaFile(path: "assets/\(name)", url: url, byteCount: Int64(data.count))
+    }
+  }
+
+  private func writePayload(to url: URL, byteCount: Int64, seed: UInt64) throws {
+    try writeAsset(to: url, byteCount: byteCount, seed: seed)
+  }
+
+  private static let pngFixture = Data(
+    base64Encoded:
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+  )!
+
+  private static let pdfFixture = Data(
+    base64Encoded:
+      "JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAxMCAxMF0gL0NvbnRlbnRzIDQgMCBSID4+CmVuZG9iago0IDAgb2JqCjw8IC9MZW5ndGggMCA+PgpzdHJlYW0KCmVuZHN0cmVhbQplbmRvYmoKeHJlZgowIDUKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDE1IDAwMDAwIG4gCjAwMDAwMDA2NCAwMDAwMCBuIAowMDAwMDAwMTIxIDAwMDAwIG4gCjAwMDAwMDIwNiAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDUgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjI1NQolJUVPRgo="
+  )!
+
+  private static let wavFixture: Data = {
+    var data = Data("RIFF".utf8)
+    func appendLE(_ value: UInt32) {
+      data.append(UInt8(truncatingIfNeeded: value))
+      data.append(UInt8(truncatingIfNeeded: value >> 8))
+      data.append(UInt8(truncatingIfNeeded: value >> 16))
+      data.append(UInt8(truncatingIfNeeded: value >> 24))
+    }
+    data.append(contentsOf: [0, 0, 0, 0])
+    data.append(contentsOf: Data("WAVEfmt ".utf8))
+    appendLE(16)
+    data.append(contentsOf: [1, 0, 1, 0])
+    appendLE(8_000)
+    appendLE(8_000)
+    data.append(contentsOf: [1, 0, 8, 0])
+    data.append(contentsOf: Data("data".utf8))
+    appendLE(8)
+    data.append(contentsOf: repeatElement(UInt8(128), count: 8))
+    let riffSize = UInt32(data.count - 8)
+    data.replaceSubrange(
+      4..<8,
+      with: Data([
+        UInt8(truncatingIfNeeded: riffSize),
+        UInt8(truncatingIfNeeded: riffSize >> 8),
+        UInt8(truncatingIfNeeded: riffSize >> 16),
+        UInt8(truncatingIfNeeded: riffSize >> 24),
+      ]))
+    return data
+  }()
+
+  private static let mp4Fixture = Data(
+    base64Encoded:
+      "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMVbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAA"
+      + "AAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAj90cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAA"
+      + "AAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAAAAABAAAAAAG3"
+      + "bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAQABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABYm1pbmYAAAAUdm1o"
+      + "ZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAASJzdGJsAAAAvnN0c2QAAAAAAAAAAQAAAK5hdmMxAAAAAAAAAAEAAAAAAAAA"
+      + "AAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2Mi4yOC4xMDEgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAANGF2Y0MBZAAK/+EAF2dkAAqs2V7ARAAAAwAEAAAD"
+      + "AAg8SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAABYoAAAAAAAAABhzdHRzAAAAAAAAAAEAAAABAABAAAAAABxzdHNjAAAAAAAAAAEA"
+      + "AAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAALFAAAAAQAAABRzdGNvAAAAAAAAAAEAAANFAAAAYnVkdGEAAABabWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwA"
+      + "AAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY2Mi4xMi4xMDEAAAAIZnJlZQAAAs1tZGF0AAACrQYF//+p3EXpvebZSLeWLNgg2SPu73gy"
+      + "NjQgLSBjb3JlIDE2NSByMzIyMiBiMzU2MDVhIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyNSAtIGh0dHA6Ly93d3cudmlkZW9sYW4u"
+      + "b3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lf"
+      + "cmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bz"
+      + "a2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxh"
+      + "Y2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWln"
+      + "aHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTEgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCBy"
+      + "Yz1jcmYgbWJ0cmVlPTEgY3JmPTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAAQZYiEABX/"
+      + "/vfJ78Cm69vfgQ=="
+  )!
 
   private func writeJSONLines(to url: URL, count: Int, seed: UInt64, prefix: String) throws {
     let temporary = url.appendingPathExtension("tmp")
@@ -199,54 +302,10 @@ public struct BenchmarkGenerator: Sendable {
           bytes[index] = UInt8(truncatingIfNeeded: state >> 56)
         }
       }
-      if remaining == byteCount {
-        let header = makeTIFFHeader()
-        chunk.replaceSubrange(0..<header.count, with: header)
-      }
       try handle.write(contentsOf: chunk)
       remaining -= Int64(size)
     }
     try replaceItem(temporary, at: url)
-  }
-
-  private func makeTIFFHeader() -> Data {
-    var bytes = [UInt8]()
-    bytes += [0x49, 0x49, 0x2A, 0x00]
-    appendUInt32(8, to: &bytes)
-    appendUInt16(10, to: &bytes)
-    appendEntry(tag: 256, type: 4, value: 1, to: &bytes)
-    appendEntry(tag: 257, type: 4, value: 1, to: &bytes)
-    appendEntry(tag: 258, type: 3, value: 8, to: &bytes)
-    appendEntry(tag: 259, type: 3, value: 1, to: &bytes)
-    appendEntry(tag: 262, type: 3, value: 1, to: &bytes)
-    appendEntry(tag: 273, type: 4, value: 134, to: &bytes)
-    appendEntry(tag: 277, type: 3, value: 1, to: &bytes)
-    appendEntry(tag: 278, type: 4, value: 1, to: &bytes)
-    appendEntry(tag: 279, type: 4, value: 1, to: &bytes)
-    appendEntry(tag: 284, type: 3, value: 1, to: &bytes)
-    appendUInt32(0, to: &bytes)
-    precondition(bytes.count == 134)
-    return Data(bytes)
-  }
-
-  private func appendEntry(tag: UInt16, type: UInt16, value: UInt32, to bytes: inout [UInt8]) {
-    appendUInt16(tag, to: &bytes)
-    appendUInt16(type, to: &bytes)
-    appendUInt32(1, to: &bytes)
-    appendUInt32(value, to: &bytes)
-  }
-
-  private func appendUInt16(_ value: UInt16, to bytes: inout [UInt8]) {
-    bytes += [UInt8(value & 0xFF), UInt8(value >> 8)]
-  }
-
-  private func appendUInt32(_ value: UInt32, to bytes: inout [UInt8]) {
-    bytes += [
-      UInt8(value & 0xFF),
-      UInt8((value >> 8) & 0xFF),
-      UInt8((value >> 16) & 0xFF),
-      UInt8((value >> 24) & 0xFF),
-    ]
   }
 
   private func replaceItem(_ temporary: URL, at destination: URL) throws {

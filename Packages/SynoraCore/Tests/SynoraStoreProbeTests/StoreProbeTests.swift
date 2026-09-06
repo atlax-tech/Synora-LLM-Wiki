@@ -5,13 +5,23 @@ import Testing
 
 @testable import SynoraStoreProbe
 
+private struct TestClock: Clock {
+  let date: Date
+
+  func now() -> Date { date }
+}
+
 @Test
 func storeWritesOperationAndRejectsStaleRevisionWithoutPartialWrite() throws {
   let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
   defer { try? FileManager.default.removeItem(atPath: path) }
   let id = UUID(uuidString: "00000000-0000-4000-8000-000000000001")!
   let secondOperationID = UUID(uuidString: "00000000-0000-4000-8000-000000000003")!
-  let store = try StoreProbe(path: path, ids: FixedIDGenerator([id, secondOperationID]))
+  let store = try StoreProbe(
+    path: path,
+    clock: TestClock(date: Date(timeIntervalSince1970: 42)),
+    ids: FixedIDGenerator([id, secondOperationID])
+  )
   let recordID = UUID(uuidString: "00000000-0000-4000-8000-000000000002")!
   let first = try store.saveReceipt(Record(id: recordID, title: "first"))
   #expect(first.revision == 1)
@@ -31,6 +41,11 @@ func storeWritesOperationAndRejectsStaleRevisionWithoutPartialWrite() throws {
   }
   #expect(try store.operationCount() == 1)
   #expect(try store.record(id: recordID)?.title == "first")
+  let database = try DatabaseQueue(path: path)
+  #expect(
+    try database.read { db in try Double.fetchOne(db, sql: "SELECT timestamp FROM operations") }
+      == 42
+  )
   let snapshot = try store.snapshot()
   #expect(snapshot.isValid())
   #expect(try store.latestSnapshot() == snapshot)
@@ -60,6 +75,9 @@ func replayRestoresProjectionAndRejectsCorruptLogAtomically() throws {
   #expect(try store.latestSnapshot() == oldSnapshot)
   let latest = try store.record(id: id)
   try database.write { db in try db.execute(sql: "DELETE FROM records") }
+  #expect(try store.recoverFromSnapshot() == oldSnapshot)
+  #expect(try store.record(id: id) == latest)
+  try database.write { db in try db.execute(sql: "DELETE FROM records") }
   try store.replayProjection()
   #expect(try store.record(id: id) == latest)
   #expect(expected?.revision == 100)
@@ -88,7 +106,9 @@ func blockAndAssetProjectionRoundTripsThroughReplayAndRecovery() throws {
   #expect(try store.block(id: blockID)?.position == 1)
   let assetID = UUID()
   try store.importAsset(Asset(id: assetID, contentHash: "abc", byteCount: 3))
-  #expect(try store.importAsset(Asset(id: assetID, contentHash: "abc", byteCount: 3)) != nil)
+  #expect(
+    try store.importAsset(Asset(id: assetID, contentHash: "abc", byteCount: 3)).revision == 0
+  )
   #expect(throws: StoreError.operationConflict) {
     try store.importAsset(Asset(id: assetID, contentHash: "different", byteCount: 9))
   }
