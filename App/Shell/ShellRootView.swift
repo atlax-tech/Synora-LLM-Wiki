@@ -153,6 +153,17 @@ struct ShellRootView: View {
         .frame(width: 0, height: 0)
         .allowsHitTesting(false)
     }
+    .overlay(alignment: .topLeading) {
+      Text(" ")
+        .font(.system(size: 1))
+        .foregroundStyle(.clear)
+        .frame(width: 1, height: 1)
+        .clipped()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(metricsAccessibilityValue)
+        .accessibilityValue(metricsAccessibilityValue)
+        .accessibilityIdentifier(ShellAccessibilityID.contentMetrics)
+    }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier(ShellAccessibilityID.window)
     .preferredColorScheme(.light)

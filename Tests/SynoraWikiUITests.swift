@@ -47,8 +47,16 @@ final class SynoraWikiUITests: XCTestCase {
         continue
       }
 
+      let contentMetrics = application.descendants(matching: .any)[
+        "shell-content-metrics"
+      ]
+      XCTAssertTrue(contentMetrics.waitForExistence(timeout: 8))
+
       let frame = application.windows.firstMatch.frame
-      let contentValue = contentRoot.value as? String ?? ""
+      let contentValue =
+        (contentMetrics.value as? String).flatMap {
+          $0.isEmpty ? nil : $0
+        } ?? contentMetrics.label
       print("VISUAL_FRAME_\(size.name.uppercased())=\(frame)")
       print("VISUAL_CONTENT_\(size.name.uppercased())=\(contentValue)")
       let firstRecord = application.descendants(matching: .any)[
@@ -65,7 +73,7 @@ final class SynoraWikiUITests: XCTestCase {
       attachment.lifetime = .keepAlways
       add(attachment)
       observations[size.name] = [
-        "requestedContentPoints": ["width": size.width, "height": size.height],
+        "requestedWindowPoints": ["width": size.width, "height": size.height],
         "contentValue": contentValue,
         "windowFrame": [
           "x": frame.origin.x,
@@ -77,12 +85,11 @@ final class SynoraWikiUITests: XCTestCase {
       application.terminate()
     }
 
-    let metadataURL = outputDirectory.appendingPathComponent("visual-metadata.json")
     let metadata = try JSONSerialization.data(
       withJSONObject: observations,
-      options: [.prettyPrinted, .sortedKeys]
+      options: [.sortedKeys]
     )
-    try metadata.write(to: metadataURL)
+    print("VISUAL_METADATA_BASE64=\(metadata.base64EncodedString())")
   }
 
   func testMainNavigationSwitchesRecordKindsAndSelection() {

@@ -201,7 +201,9 @@ def main() -> int:
 
     for name, expected in SIZES.items():
         image = args.candidates / f"shell-{name}.png"
-        entry: dict[str, object] = {"expectedContentPoints": {"width": expected[0], "height": expected[1]}}
+        entry: dict[str, object] = {
+            "requestedWindowPoints": {"width": expected[0], "height": expected[1]}
+        }
         if not image.is_file():
             entry["status"] = "MISSING"
             failures.append(f"missing candidate: {image}")
@@ -216,17 +218,19 @@ def main() -> int:
             report["sizes"][name] = entry
             continue
 
-        content = entry["candidate"].get("contentPoints")
-        if isinstance(content, dict):
-            width_delta = abs(float(content["width"]) - expected[0])
-            height_delta = abs(float(content["height"]) - expected[1])
-            entry["contentDeltaPoints"] = {"width": width_delta, "height": height_delta}
-            if width_delta > 1 or height_delta > 1:
-                entry["geometryStatus"] = "CLAMPED"
-            else:
-                entry["geometryStatus"] = "MATCH"
+        frame = entry["candidate"].get("windowFrame")
+        if isinstance(frame, dict):
+            width_delta = abs(float(frame["width"]) - expected[0])
+            height_delta = abs(float(frame["height"]) - expected[1])
+            entry["windowDeltaPoints"] = {"width": width_delta, "height": height_delta}
+            entry["windowGeometryStatus"] = "MATCH" if width_delta <= 1 and height_delta <= 1 else "CLAMPED"
         else:
-            entry["geometryStatus"] = "UNREPORTED"
+            entry["windowGeometryStatus"] = "UNREPORTED"
+
+        if isinstance(entry["candidate"].get("contentPoints"), dict):
+            entry["contentGeometryStatus"] = "MEASURED"
+        else:
+            entry["contentGeometryStatus"] = "UNREPORTED"
 
         if args.baseline:
             baseline = args.baseline / f"shell-{name}.png"

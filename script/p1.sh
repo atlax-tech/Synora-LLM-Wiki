@@ -38,7 +38,8 @@ run_ui() {
 run_visual() {
   local candidates="$artifact_dir/candidates"
   mkdir -p "$candidates"
-  xcode_test SynoraWikiUITests/SynoraWikiUITests/testCapturesThreeShellCandidates \
+  SYNORA_VISUAL_OUTPUT_DIR="$candidates" \
+    xcode_test SynoraWikiUITests/SynoraWikiUITests/testCapturesThreeShellCandidates \
     | tee "$artifact_dir/visual-capture.log"
 
   local result_bundle
@@ -52,13 +53,15 @@ run_visual() {
   xcrun xcresulttool export attachments \
     --path "$result_bundle" \
     --output-path "$export_dir"
-  python3 - "$export_dir/manifest.json" "$export_dir" "$candidates" <<'PY'
+  python3 - "$export_dir/manifest.json" "$export_dir" "$candidates" \
+    "$artifact_dir/visual-capture.log" <<'PY'
+import base64
 import json
 import shutil
 import sys
 from pathlib import Path
 
-manifest_path, export_dir, candidates_dir = map(Path, sys.argv[1:])
+manifest_path, export_dir, candidates_dir, log_path = map(Path, sys.argv[1:])
 manifest = json.loads(manifest_path.read_text())
 for test in manifest:
     for attachment in test.get("attachments", []):
@@ -67,6 +70,16 @@ for test in manifest:
         if prefix in {"shell-compact", "shell-default", "shell-large"}:
             source = export_dir / attachment["exportedFileName"]
             shutil.copyfile(source, candidates_dir / f"{prefix}.png")
+
+metadata_lines = [
+    line.split("=", 1)[1].strip()
+    for line in log_path.read_text().splitlines()
+    if line.startswith("VISUAL_METADATA_BASE64=")
+]
+if not metadata_lines:
+    raise SystemExit("visual test did not emit metadata")
+metadata = base64.b64decode(metadata_lines[-1])
+(candidates_dir / "visual-metadata.json").write_bytes(metadata)
 PY
 
   local baseline_args=()

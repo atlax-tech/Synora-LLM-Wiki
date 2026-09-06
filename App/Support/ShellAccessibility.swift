@@ -8,6 +8,7 @@ enum ShellAccessibilityID {
   static let inspector = "inspector"
   static let search = "search"
   static let contentRoot = "shell-content-root"
+  static let contentMetrics = "shell-content-metrics"
   static let recordKind = "record-kind"
   static let commandPalette = "command-palette"
   static let shellState = "shell-state"
