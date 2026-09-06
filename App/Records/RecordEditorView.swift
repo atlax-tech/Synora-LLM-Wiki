@@ -21,7 +21,12 @@ struct RecordEditorView: View {
     }
     .background(SynoraSemanticColor.canvas.color)
     .accessibilityLabel("Editor")
-    .accessibilityIdentifier("editor")
+    .accessibilityValue(
+      model.selectedRecord(for: model.selectedRecordKind)?.title ?? "No record selected"
+    )
+    .accessibilityHint("Read-only record preview")
+    .accessibilityIdentifier(ShellAccessibilityID.editor)
+    .focusSection()
   }
 
   private func recordContent(_ record: Record) -> some View {

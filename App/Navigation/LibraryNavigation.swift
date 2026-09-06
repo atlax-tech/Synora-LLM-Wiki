@@ -17,7 +17,10 @@ struct LibraryNavigation: View {
     .listStyle(.sidebar)
     .frame(minWidth: ShellLayoutPolicy.sidebarWidth)
     .accessibilityLabel("Library navigation")
-    .accessibilityIdentifier("sidebar")
+    .accessibilityValue(model.sidebarSelection?.title ?? "No selection")
+    .accessibilityHint("Use arrow keys to navigate library sections")
+    .accessibilityIdentifier(ShellAccessibilityID.sidebar)
+    .focusSection()
   }
 
   private var selectionBinding: Binding<SidebarItem?> {
@@ -50,7 +53,9 @@ struct LibraryNavigation: View {
     .frame(minHeight: 33)
     .contentShape(.rect)
     .tag(item)
-    .accessibilityIdentifier("sidebar-\(item.rawValue)")
+    .accessibilityLabel(item.title)
+    .accessibilityHint(item.recordKind.map { "Shows \($0.title)" } ?? "Selects this library item")
+    .accessibilityIdentifier(ShellAccessibilityID.sidebarItem(item))
   }
 
   private func count(for item: SidebarItem) -> Int? {

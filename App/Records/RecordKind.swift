@@ -7,9 +7,9 @@ enum RecordKind: String, CaseIterable, Hashable, Sendable {
   var title: String {
     switch self {
     case .note:
-      "Notes"
+      String(localized: "Notes")
     case .journal:
-      "Journal"
+      String(localized: "Journal")
     }
   }
 }

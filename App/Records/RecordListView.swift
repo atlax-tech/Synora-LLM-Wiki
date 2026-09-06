@@ -17,13 +17,20 @@ struct RecordListView: View {
       .padding(.horizontal, SynoraSpacing.md)
       .padding(.vertical, SynoraSpacing.sm)
       .accessibilityLabel("Record kind")
-      .accessibilityIdentifier("record-kind")
+      .accessibilityValue(model.selectedRecordKind.title)
+      .accessibilityHint("Switches between notes and journal records")
+      .accessibilityIdentifier(ShellAccessibilityID.recordKind)
 
       content
     }
     .background(SynoraSemanticColor.list.color)
     .accessibilityLabel("Record list")
-    .accessibilityIdentifier("record-list")
+    .accessibilityValue(
+      model.selectedRecord(for: model.selectedRecordKind)?.title ?? "No record selected"
+    )
+    .accessibilityHint("Use arrow keys to select a record")
+    .accessibilityIdentifier(ShellAccessibilityID.recordList)
+    .focusSection()
   }
 
   private var content: AnyView {
@@ -107,7 +114,7 @@ private struct RecordRow: View {
     .accessibilityLabel(record.title)
     .accessibilityValue(record.summary)
     .accessibilityHint("Selects this record")
-    .accessibilityIdentifier("record-\(record.id.uuidString)")
+    .accessibilityIdentifier(ShellAccessibilityID.record(record.id))
   }
 }
 

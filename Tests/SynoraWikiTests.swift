@@ -119,6 +119,19 @@ final class SynoraWikiTests: XCTestCase {
     XCTAssertFalse(model.canRetryContentLoad)
   }
 
+  func testAccessibilityIdentifiersRemainStable() {
+    XCTAssertEqual(ShellAccessibilityID.window, "window")
+    XCTAssertEqual(ShellAccessibilityID.sidebar, "sidebar")
+    XCTAssertEqual(ShellAccessibilityID.recordList, "record-list")
+    XCTAssertEqual(ShellAccessibilityID.editor, "editor")
+    XCTAssertEqual(ShellAccessibilityID.inspector, "inspector")
+    XCTAssertEqual(ShellAccessibilityID.search, "search")
+    XCTAssertEqual(ShellAccessibilityID.recordKind, "record-kind")
+    XCTAssertEqual(ShellAccessibilityID.commandPalette, "command-palette")
+    XCTAssertEqual(ShellAccessibilityID.shellState, "shell-state")
+    XCTAssertEqual(ShellAccessibilityID.sidebarItem(.skills), "sidebar-skills")
+  }
+
   func testRecordListProjectionGroupsMonthsAndKeepsStableOrder() {
     let records = [
       Record(

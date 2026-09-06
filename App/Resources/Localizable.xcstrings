@@ -1,0 +1,144 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "AI Skills" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "AI Skills" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 技能" } }
+      }
+    },
+    "All Journal" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All Journal" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "全部日志" } }
+      }
+    },
+    "All Notes" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "All Notes" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "全部笔记" } }
+      }
+    },
+    "Context" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Context" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上下文" } }
+      }
+    },
+    "Daily" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Daily" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "日常" } }
+      }
+    },
+    "Favorites" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Favorites" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "收藏" } }
+      }
+    },
+    "Home" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Home" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "主页" } }
+      }
+    },
+    "Ideas" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Ideas" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "想法" } }
+      }
+    },
+    "Inbox" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Inbox" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "收件箱" } }
+      }
+    },
+    "Journal" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Journal" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "日志" } }
+      }
+    },
+    "Knowledge" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Knowledge" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "知识" } }
+      }
+    },
+    "Life" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Life" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "生活" } }
+      }
+    },
+    "Loading" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Loading" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在加载" } }
+      }
+    },
+    "No records" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No records" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂无记录" } }
+      }
+    },
+    "Notes" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Notes" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "笔记" } }
+      }
+    },
+    "Offline" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Offline" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "离线" } }
+      }
+    },
+    "Search records" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Search records" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "搜索记录" } }
+      }
+    },
+    "Sync conflict" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sync conflict" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "同步冲突" } }
+      }
+    },
+    "Tools" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tools" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具" } }
+      }
+    },
+    "Today" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Today" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "今天" } }
+      }
+    },
+    "Unable to load records" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unable to load records" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法加载记录" } }
+      }
+    },
+    "Your local records are ready." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Your local records are ready." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地记录已准备就绪。" } }
+      }
+    },
+    "Your local records will appear here." : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Your local records will appear here." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本地记录会显示在这里。" } }
+      }
+    }
+  },
+  "version" : "1.0"
+}

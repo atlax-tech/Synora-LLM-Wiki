@@ -3,6 +3,8 @@ import SynoraDesignSystem
 
 struct ShellRootView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   @State private var model: ShellModel
   @SceneStorage("synora.shell.sidebar-visible") private var persistedSidebarVisible = true
   @SceneStorage("synora.shell.inspector-visible") private var persistedInspectorVisible = true
@@ -53,6 +55,7 @@ struct ShellRootView: View {
           placement: .toolbar,
           prompt: "Search records"
         )
+        .accessibilityIdentifier(ShellAccessibilityID.search)
         .toolbar {
           ToolbarSpacer(.flexible)
 
@@ -117,11 +120,17 @@ struct ShellRootView: View {
         selectedRecordKind: model.selectedRecordKind,
         hasSelection: model.selectedRecord(for: model.selectedRecordKind) != nil,
         contentState: model.contentState,
-        isInspectorSpaceLimited: !model.inspectorToggleEnabled
+        isInspectorSpaceLimited: !model.inspectorToggleEnabled,
+        reduceTransparency: reduceTransparency,
+        highContrast: colorSchemeContrast == .increased
       )
     }
     .animation(
-      .easeInOut(duration: SynoraMotion.inspector.duration(reducingMotion: reduceMotion)),
+      .easeInOut(
+        duration: SynoraMotion.inspector.duration(
+          reducingMotion: reduceMotion || ShellEnvironment.animationsDisabled
+        )
+      ),
       value: model.commandPalettePresented
     )
     .onExitCommand {
@@ -131,7 +140,7 @@ struct ShellRootView: View {
     }
     .focusedSceneValue(\.shellActions, actions)
     .accessibilityElement(children: .contain)
-    .accessibilityIdentifier("window")
+    .accessibilityIdentifier(ShellAccessibilityID.window)
   }
 
   private var actions: ShellActions {
@@ -182,6 +191,8 @@ private struct ShellStatusBar: View {
   let hasSelection: Bool
   let contentState: ShellContentState
   let isInspectorSpaceLimited: Bool
+  let reduceTransparency: Bool
+  let highContrast: Bool
 
   var body: some View {
     HStack(spacing: SynoraSpacing.sm) {
@@ -208,13 +219,26 @@ private struct ShellStatusBar: View {
     }
     .padding(.horizontal, SynoraSpacing.md)
     .frame(height: 32)
-    .background(.regularMaterial)
+    .background(
+      reduceTransparency
+        ? AnyShapeStyle(SynoraSemanticColor.canvas.color)
+        : AnyShapeStyle(.regularMaterial)
+    )
     .overlay(alignment: .top) {
       Rectangle()
-        .fill(SynoraSemanticColor.borderSubtle.color)
+        .fill(
+          highContrast
+            ? SynoraSemanticColor.inkSecondary.color
+            : SynoraSemanticColor.borderSubtle.color
+        )
         .frame(height: 1)
     }
     .accessibilityElement(children: .combine)
-    .accessibilityIdentifier("shell-state")
+    .accessibilityValue(
+      isInspectorSpaceLimited
+        ? "Inspector unavailable at this width"
+        : (contentState == .loaded ? "Local library" : contentState.title)
+    )
+    .accessibilityIdentifier(ShellAccessibilityID.shellState)
   }
 }

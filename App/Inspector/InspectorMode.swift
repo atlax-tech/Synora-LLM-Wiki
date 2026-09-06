@@ -5,9 +5,9 @@ enum InspectorMode: String, CaseIterable, Hashable, Sendable {
   var title: String {
     switch self {
     case .context:
-      "Context"
+      String(localized: "Context")
     case .skills:
-      "AI Skills"
+      String(localized: "AI Skills")
     }
   }
 }

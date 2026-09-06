@@ -13,34 +13,34 @@ enum ShellContentState: String, CaseIterable, Identifiable, Sendable {
   var title: String {
     switch self {
     case .loaded:
-      "Loaded"
+      String(localized: "Loaded")
     case .loading:
-      "Loading"
+      String(localized: "Loading")
     case .empty:
-      "No records"
+      String(localized: "No records")
     case .error:
-      "Unable to load records"
+      String(localized: "Unable to load records")
     case .offline:
-      "Offline"
+      String(localized: "Offline")
     case .conflict:
-      "Sync conflict"
+      String(localized: "Sync conflict")
     }
   }
 
   var message: String {
     switch self {
     case .loaded:
-      "Your local records are ready."
+      String(localized: "Your local records are ready.")
     case .loading:
-      "Loading your local records."
+      String(localized: "Loading your local records.")
     case .empty:
-      "Your local records will appear here."
+      String(localized: "Your local records will appear here.")
     case .error:
-      "The local record index could not be loaded."
+      String(localized: "The local record index could not be loaded.")
     case .offline:
-      "The local library is available offline."
+      String(localized: "The local library is available offline.")
     case .conflict:
-      "A local change needs review before it can be synced."
+      String(localized: "A local change needs review before it can be synced.")
     }
   }
 

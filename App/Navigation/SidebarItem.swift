@@ -1,3 +1,5 @@
+import Foundation
+
 enum SidebarItem: String, CaseIterable, Hashable, Identifiable, Sendable {
   case today
   case inbox
@@ -20,35 +22,35 @@ enum SidebarItem: String, CaseIterable, Hashable, Identifiable, Sendable {
   var title: String {
     switch self {
     case .today:
-      "Today"
+      String(localized: "Today")
     case .inbox:
-      "Inbox"
+      String(localized: "Inbox")
     case .allNotes:
-      "All Notes"
+      String(localized: "All Notes")
     case .topics:
-      "Topics"
+      String(localized: "Topics")
     case .tags:
-      "Tags"
+      String(localized: "Tags")
     case .favorites:
-      "Favorites"
+      String(localized: "Favorites")
     case .trash:
-      "Trash"
+      String(localized: "Trash")
     case .allJournals:
-      "All Journal"
+      String(localized: "All Journal")
     case .journalYears:
-      "Years"
+      String(localized: "Years")
     case .travel:
-      "Travel"
+      String(localized: "Travel")
     case .life:
-      "Life"
+      String(localized: "Life")
     case .daily:
-      "Daily"
+      String(localized: "Daily")
     case .ideas:
-      "Ideas"
+      String(localized: "Ideas")
     case .context:
-      "Context"
+      String(localized: "Context")
     case .skills:
-      "AI Skills"
+      String(localized: "AI Skills")
     }
   }
 
@@ -106,15 +108,15 @@ struct SidebarSection: Equatable, Sendable {
 
 enum SidebarSections {
   static let all: [SidebarSection] = [
-    SidebarSection(title: "Home", items: [.today, .inbox]),
+    SidebarSection(title: String(localized: "Home"), items: [.today, .inbox]),
     SidebarSection(
-      title: "Knowledge",
+      title: String(localized: "Knowledge"),
       items: [.allNotes, .topics, .tags, .favorites, .trash]
     ),
     SidebarSection(
-      title: "Journal",
+      title: String(localized: "Journal"),
       items: [.allJournals, .journalYears, .travel, .life, .daily, .ideas]
     ),
-    SidebarSection(title: "Tools", items: [.context, .skills]),
+    SidebarSection(title: String(localized: "Tools"), items: [.context, .skills]),
   ]
 }

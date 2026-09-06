@@ -3,6 +3,8 @@ import SynoraDesignSystem
 
 struct InspectorShellView: View {
   @Bindable var model: ShellModel
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
   var body: some View {
     VStack(spacing: 0) {
@@ -16,6 +18,8 @@ struct InspectorShellView: View {
       .padding(.horizontal, SynoraSpacing.md)
       .padding(.vertical, SynoraSpacing.sm)
       .accessibilityLabel("Inspector mode")
+      .accessibilityValue(model.inspectorMode.title)
+      .accessibilityHint("Switches between record context and AI skill availability")
       .accessibilityIdentifier("inspector-mode")
 
       ScrollView {
@@ -33,7 +37,9 @@ struct InspectorShellView: View {
     }
     .background(SynoraSemanticColor.inspector.color)
     .accessibilityLabel("Inspector")
-    .accessibilityIdentifier("inspector")
+    .accessibilityValue(model.inspectorMode.title)
+    .accessibilityIdentifier(ShellAccessibilityID.inspector)
+    .focusSection()
   }
 
   private var modeBinding: Binding<InspectorMode> {
@@ -99,11 +105,22 @@ struct InspectorShellView: View {
     VStack(alignment: .leading, spacing: SynoraSpacing.sm, content: content)
       .padding(SynoraSpacing.md)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(.regularMaterial, in: .rect(cornerRadius: SynoraRadius.inspectorCard))
+      .background(
+        reduceTransparency
+          ? AnyShapeStyle(SynoraSemanticColor.inspector.color)
+          : AnyShapeStyle(.regularMaterial),
+        in: .rect(cornerRadius: SynoraRadius.inspectorCard)
+      )
       .overlay {
         RoundedRectangle(cornerRadius: SynoraRadius.inspectorCard)
-          .stroke(SynoraSemanticColor.borderSubtle.color, lineWidth: 1)
+          .stroke(borderColor, lineWidth: 1)
       }
+  }
+
+  private var borderColor: Color {
+    colorSchemeContrast == .increased
+      ? SynoraSemanticColor.inkSecondary.color
+      : SynoraSemanticColor.borderSubtle.color
   }
 }
 

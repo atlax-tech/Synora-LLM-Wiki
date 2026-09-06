@@ -147,7 +147,8 @@ struct ShellCommandPalette: View {
       .frame(width: 360)
       .glassEffect(.regular, in: .rect(cornerRadius: SynoraRadius.floatingControl))
       .accessibilityElement(children: .contain)
-      .accessibilityIdentifier("command-palette")
+      .accessibilityHint("Choose a keyboard command")
+      .accessibilityIdentifier(ShellAccessibilityID.commandPalette)
     }
   }
 
