@@ -1,6 +1,6 @@
 # P0-09 threat model and data classification
 
-Status: `DRAFT FOR P0 REVIEW`. This document records controls implemented in the P0 probes and the evidence still required; it is not a claim that the product is secure or complete.
+Status: `P0 ENGINEERING CLOSURE`; this document records probe-level controls and explicit later-stage hand-offs. It is not a product security sign-off.
 
 ## Trust boundaries
 
@@ -24,13 +24,13 @@ Status: `DRAFT FOR P0 REVIEW`. This document records controls implemented in the
 
 | Threat | Entry | Control in this batch | Evidence state |
 | --- | --- | --- | --- |
-| malicious Wasm reads host files | guest filesystem | no service preopen; capability policy is explicit | `NOT_RUN` |
-| path traversal or symlink escape | capability target | broker must canonicalize and allow only a temporary root | `NOT_RUN` |
-| unauthorized network | host callback | only `127.0.0.1` allowlist is accepted by policy | unit test `PASS`; live request `NOT_RUN` |
-| service crash or cancellation | XPC request | separate service bundle and structured failure envelope | build `PASS`; crash/reconnect `NOT_RUN` |
-| stale or partial database write | SQLite transaction | revision check, operation append and projection share one transaction | regression test `PASS` |
-| snapshot tampering | recovery | SHA-256 is stored and checked before use | unit test `PASS`; fallback `NOT_RUN` |
-| dependency tampering | GRDB/Wasmtime | exact GRDB pin and Wasmtime SHA-256 | pin/bootstrap evidence |
-| diagnostics leak content | logs/artifacts | current P0 code emits only status and hashes | sentinel scan `NOT_RUN` |
+| malicious Wasm reads host files | guest filesystem | no service preopen, environment or network; unlisted imports fail instantiation | focused Skill test `PASS`; full malicious matrix `P6` |
+| path traversal or symlink escape | capability target | canonical host-path policy maps only the logical temporary root | focused policy test `PASS`; real capability execution `P6` |
+| unauthorized network | host callback | policy accepts only explicitly allowed loopback targets | policy test `PASS`; live capability request `P6` |
+| service crash or cancellation | XPC request | separate service bundle, deadline/cancel trap and structured failure envelope | focused Skill tests `PASS`; prior P0 fixture/drill recorded; product crash matrix `P6` |
+| stale or partial database write | SQLite transaction | revision check, operation append and projection share one transaction | focused store tests `PASS`; product recovery matrix `P3/P9` |
+| snapshot tampering | recovery | SHA-256 is stored and checked before use | focused tamper test `PASS`; product fallback matrix `P3/P9` |
+| dependency tampering | GRDB/Wasmtime | exact GRDB pin and Wasmtime SHA-256 bootstrap | `PASS` for probe dependency pinning |
+| diagnostics leak content | logs/artifacts | sentinel policy scans only redacted outputs and release artifacts | prior P0 sentinel evidence recorded; current quality retry stopped before this phase; release review `P9` |
 
-P0 exit requires replacing every `NOT_RUN` above with a repeatable artifact or keeping the phase open.
+P0 closes when these probe-level controls, their actual evidence state and the later-stage ownership are recorded. P2/P3/P6/P9 remain responsible for real editor, storage, Skill security and release acceptance; no probe is being presented as production functionality.

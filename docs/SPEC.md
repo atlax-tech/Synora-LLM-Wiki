@@ -3,7 +3,8 @@
 适用范围以 [PRODUCT §5.3](PRODUCT.md#53-当前服务与交付边界) 为准；DEFERRED 项不进入任何已规划阶段的依赖、完成率或退出门槛，不记为 BLOCKED，不要求 Apple 开发者账号。
 
 文档版本：1.0
-状态：CONFIRMED（规划基线）；P0 `CHANGES_REQUIRED`，P1–P9 `NOT_STARTED`。
+状态：CONFIRMED（规划基线）；P0 `PASS`，P1 `READY`，P2–P9 `NOT_STARTED`。
+阶段状态：P0 工程探针已在 `ce4a71c` 收口。SwiftPM、格式、应用/探针构建和 focused probe 证据已记录；probe UI 的 accessibility 环境阻塞已重试并如实保留，不前移为产品代码 blocker。P1 仅标记为 READY，不自动启动。
 解释：阶段只分配实现和验证时机，不删减产品能力。实现阶段交付可运行增量；探针阶段只需用最小代表性证据回答预定技术问题。不允许用不可用占位控件提前宣称功能完成。
 
 ## 1. 阶段原则
@@ -31,7 +32,7 @@
 
 ## 3. P0 — 架构与风险探针
 
-当前状态与证据见 [P0 traceability](p0/traceability.md)。P0 只冻结方向和已知风险，不以后续阶段的生产级矩阵作为退出条件。
+当前状态与证据见 [P0 traceability](p0/traceability.md)。P0 已冻结方向和已知风险；后续阶段的生产级矩阵不追溯为 P0 blocker。
 
 ### 目标
 
@@ -56,7 +57,7 @@
 
 ### 退出门槛
 
-见 [ACCEPTANCE.md](ACCEPTANCE.md) 对应阶段；不得越过未通过的门槛。
+P0 已按 [ACCEPTANCE.md](ACCEPTANCE.md) 的轻量化边界收口：最小代表性探针、focused 检查、适用 ADR 和后续阶段 hand-off 均有记录。真实 IME/VoiceOver/长文性能、产品规模恢复、完整 Skill 恶意矩阵与发布级检查仍由 P2/P3/P6/P9 负责。
 
 ## 4. P1 — 原生壳层与设计系统
 

@@ -1,6 +1,6 @@
 # ADR-004 同步范围暂缓记录
 
-状态：`PROPOSED / RECORD_ONLY`；日期：2026-09-06；对应：P0-06、P0-10；上位决策：[ADR-H003](ADR-H003-free-local-services.md)。
+状态：`ACCEPTED / RECORD_ONLY`；日期：2026-09-06；对应：P0-06、P0-10；上位决策：[ADR-H003](ADR-H003-free-local-services.md)。
 
 ## 记录
 
@@ -17,4 +17,4 @@
 
 ## 未关闭项
 
-这是范围记录而非同步实现或互操作证明；负向扫描需在阶段闭合 HEAD 重跑。
+这是范围记录而非同步实现或互操作证明；closure HEAD `ce4a71c` 的产品代码负向扫描为 0 命中，后续阶段出口继续复扫。

@@ -1,6 +1,6 @@
 # ADR-006 Skill 包完整性与信任根
 
-状态：`PROPOSED / UNRESOLVED`；日期：2026-09-06；对应：P0-09、P0-10、U-004。
+状态：`ACCEPTED FOR P0 DIRECTION / P6 UNRESOLVED`；日期：2026-09-06；对应：P0-09、P0-10、U-004。
 
 ## 候选决策
 
@@ -10,7 +10,7 @@ Skill 安装必须先解包到 staging，再做路径安全、包哈希、schema
 
 - `docs/ARCHITECTURE.md` 已定义 manifest 至少包含版本、runtime、权限、域名、工具、包哈希与签名，并规定 staging → 校验 → 原子激活顺序。
 - P0-07 bootstrap 对 Wasmtime 下载包做固定版本和 SHA-256 校验；当前没有 `.synoraskill` 安装器、签名验证器或信任根实现。
-- `docs/p0/threat-model.md` 将依赖篡改、路径穿越和诊断泄露列为风险，相关动态验证仍为 `NOT_RUN`。
+- `docs/p0/threat-model.md` 将依赖篡改、路径穿越和诊断泄露列为风险；P0 已记录 probe-level controls，动态恶意矩阵仍属 P6。
 
 ## 取舍与回滚
 
@@ -18,4 +18,4 @@ Skill 安装必须先解包到 staging，再做路径安全、包哈希、schema
 
 ## 未关闭项
 
-U-004 仍需用户可理解的信任来源、签名算法、撤销和降级攻击 fixture；本草案不能授权第三方包执行。
+U-004 仍需用户可理解的信任来源、签名算法、撤销和降级攻击 fixture；本 ADR 只接受 P0 的完整性校验方向，不能授权第三方包执行。
