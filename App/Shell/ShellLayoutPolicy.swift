@@ -10,8 +10,10 @@ enum ShellLayoutPolicy {
   static let recordListWidth: CGFloat = 308
   static let editorMinimumWidth: CGFloat = 500
   static let inspectorWidth: CGFloat = 280
-  static let fourColumnMinimumWidth: CGFloat = 1268
-  static let inspectorWithListMinimumWidth: CGFloat = 1088
+  // Native split-view chrome needs extra horizontal room beyond the content columns.
+  static let fourColumnMinimumWidth: CGFloat = 1560
+  // The native inspector needs extra room for split-view chrome at compact widths.
+  static let inspectorWithListMinimumWidth: CGFloat = 1360
 
   static func resolve(
     availableWidth: CGFloat,

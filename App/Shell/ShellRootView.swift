@@ -15,6 +15,7 @@ struct ShellRootView: View {
   @SceneStorage("synora.shell.inspector-mode") private var persistedInspectorMode = InspectorMode
     .context.rawValue
   @State private var searchPresented = false
+  @State private var windowMetrics: WindowMetrics?
 
   init() {
     _model = State(initialValue: ShellModel())
@@ -49,13 +50,16 @@ struct ShellRootView: View {
               max: ShellLayoutPolicy.inspectorWidth
             )
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Shell content")
+        .accessibilityValue(metricsAccessibilityValue)
+        .accessibilityIdentifier(ShellAccessibilityID.contentRoot)
         .searchable(
           text: searchBinding,
           isPresented: $searchPresented,
           placement: .toolbar,
           prompt: "Search records"
         )
-        .accessibilityIdentifier(ShellAccessibilityID.search)
         .toolbar {
           ToolbarSpacer(.flexible)
 
@@ -104,7 +108,12 @@ struct ShellRootView: View {
         .onChange(of: model.inspectorMode) { _, mode in
           persistedInspectorMode = mode.rawValue
         }
-        .background(WindowMetricsReader { _ in })
+        .background(
+          WindowMetricsReader { metrics in
+            windowMetrics = metrics
+            model.reconcile(width: metrics.contentSize.width)
+          }
+        )
       }
 
       if model.commandPalettePresented {
@@ -139,8 +148,14 @@ struct ShellRootView: View {
       }
     }
     .focusedSceneValue(\.shellActions, actions)
+    .overlay {
+      SearchFieldAccessibilityReader()
+        .frame(width: 0, height: 0)
+        .allowsHitTesting(false)
+    }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier(ShellAccessibilityID.window)
+    .preferredColorScheme(.light)
   }
 
   private var actions: ShellActions {
@@ -160,6 +175,12 @@ struct ShellRootView: View {
       get: { model.searchQuery },
       set: { model.setSearchQuery($0) }
     )
+  }
+
+  private var metricsAccessibilityValue: String {
+    guard let windowMetrics else { return "Measuring content area" }
+    let size = windowMetrics.contentSize
+    return "\(Int(size.width)) by \(Int(size.height)) points, \(windowMetrics.backingScale)x scale"
   }
 
   private var columnVisibilityBinding: Binding<NavigationSplitViewVisibility> {

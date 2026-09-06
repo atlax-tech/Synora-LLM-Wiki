@@ -50,7 +50,9 @@ struct RecordListView: View {
               }
             }
           }
-          .listStyle(.inset))
+          .listStyle(.inset)
+          .scrollContentBackground(.hidden)
+          .background(SynoraSemanticColor.list.color))
       }
     case .loading, .error, .offline, .conflict:
       return AnyView(

@@ -15,6 +15,8 @@ struct LibraryNavigation: View {
       }
     }
     .listStyle(.sidebar)
+    .scrollContentBackground(.hidden)
+    .background(SynoraSemanticColor.sidebar.color)
     .frame(minWidth: ShellLayoutPolicy.sidebarWidth)
     .accessibilityLabel("Library navigation")
     .accessibilityValue(model.sidebarSelection?.title ?? "No selection")
@@ -53,6 +55,7 @@ struct LibraryNavigation: View {
     .frame(minHeight: 33)
     .contentShape(.rect)
     .tag(item)
+    .accessibilityElement(children: .combine)
     .accessibilityLabel(item.title)
     .accessibilityHint(item.recordKind.map { "Shows \($0.title)" } ?? "Selects this library item")
     .accessibilityIdentifier(ShellAccessibilityID.sidebarItem(item))

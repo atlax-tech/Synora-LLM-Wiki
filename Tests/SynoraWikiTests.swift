@@ -12,7 +12,7 @@ final class SynoraWikiTests: XCTestCase {
 
   func testLayoutPolicyKeepsAllColumnsAtWideWidths() {
     let resolution = ShellLayoutPolicy.resolve(
-      availableWidth: 1268,
+      availableWidth: ShellLayoutPolicy.fourColumnMinimumWidth,
       desiredSidebarVisible: true,
       desiredInspectorVisible: true
     )
@@ -20,9 +20,19 @@ final class SynoraWikiTests: XCTestCase {
     XCTAssertEqual(resolution, .init(sidebarVisible: true, inspectorVisible: true))
   }
 
-  func testLayoutPolicyCollapsesSidebarWhenInspectorIsRequestedInCompactWidth() {
+  func testLayoutPolicyCollapsesInspectorBeforeSidebarWhenNativeChromeNeedsRoom() {
     let resolution = ShellLayoutPolicy.resolve(
-      availableWidth: 1267,
+      availableWidth: ShellLayoutPolicy.inspectorWithListMinimumWidth - 1,
+      desiredSidebarVisible: true,
+      desiredInspectorVisible: true
+    )
+
+    XCTAssertEqual(resolution, .init(sidebarVisible: true, inspectorVisible: false))
+  }
+
+  func testLayoutPolicyCollapsesSidebarWhenInspectorFits() {
+    let resolution = ShellLayoutPolicy.resolve(
+      availableWidth: ShellLayoutPolicy.inspectorWithListMinimumWidth,
       desiredSidebarVisible: true,
       desiredInspectorVisible: true
     )
