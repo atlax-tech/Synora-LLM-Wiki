@@ -90,6 +90,19 @@ final class SynoraWikiTests: XCTestCase {
     XCTAssertTrue(model.desiredInspectorVisible)
   }
 
+  func testInspectorModeChangePreservesRecordSelection() {
+    let model = ShellModel()
+    let selectedID = UUID(uuidString: "00000000-0000-0000-0000-000000000010")!
+
+    model.selectRecord(selectedID, in: .note)
+    let selectionBeforeModeChange = model.selectedRecordIDs
+
+    model.setInspectorMode(.skills)
+
+    XCTAssertEqual(model.selectedRecordIDs, selectionBeforeModeChange)
+    XCTAssertEqual(model.selectedRecordIDs[.note] ?? nil, selectedID)
+  }
+
   func testRecordListProjectionGroupsMonthsAndKeepsStableOrder() {
     let records = [
       Record(

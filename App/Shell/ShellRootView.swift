@@ -40,7 +40,7 @@ struct ShellRootView: View {
             .frame(minWidth: ShellLayoutPolicy.editorMinimumWidth)
         }
         .inspector(isPresented: inspectorBinding) {
-          ShellInspectorPlaceholder()
+          InspectorShellView(model: model)
             .inspectorColumnWidth(
               min: ShellLayoutPolicy.inspectorWidth,
               ideal: ShellLayoutPolicy.inspectorWidth,
@@ -173,21 +173,6 @@ struct ShellRootView: View {
         persistedInspectorVisible = presented
       }
     )
-  }
-}
-
-private struct ShellInspectorPlaceholder: View {
-  var body: some View {
-    VStack(alignment: .leading, spacing: SynoraSpacing.md) {
-      Text("Context")
-        .font(SynoraTypography.sectionTitle.font)
-        .foregroundStyle(SynoraSemanticColor.inkPrimary.color)
-      Spacer()
-    }
-    .padding(SynoraSpacing.md)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .background(SynoraSemanticColor.inspector.color)
-    .accessibilityIdentifier("inspector")
   }
 }
 
