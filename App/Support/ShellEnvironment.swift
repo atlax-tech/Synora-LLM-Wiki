@@ -16,7 +16,8 @@ enum ShellEnvironment {
   }
 
   static var shellState: String? {
-    values["SYNORA_SHELL_STATE"]
+    guard let value = values["SYNORA_SHELL_STATE"], !value.isEmpty else { return nil }
+    return value
   }
 
   static var contentSize: String? {

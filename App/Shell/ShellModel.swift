@@ -14,6 +14,8 @@ final class ShellModel {
   private(set) var inspectorMode: InspectorMode = .context
   private(set) var noteCount = 0
   private(set) var journalCount = 0
+  private(set) var contentState: ShellContentState = .empty
+  private(set) var canRetryContentLoad = false
   private(set) var recordsByKind: [RecordKind: [Record]] = [:]
   private(set) var selectedRecordIDs: [RecordKind: UUID?] = [.note: nil, .journal: nil]
 
@@ -43,21 +45,29 @@ final class ShellModel {
   }
 
   func loadRecordsIfNeeded() {
-    guard recordsByKind.isEmpty else { return }
+    if recordsByKind.isEmpty {
+      let records: [RecordKind: [Record]]
+      if ShellEnvironment.fixture == "records" {
+        records = [.note: RecordFixtureCatalog.notes, .journal: RecordFixtureCatalog.journals]
+      } else {
+        records = [.note: [], .journal: []]
+      }
 
-    let records: [RecordKind: [Record]]
-    if ShellEnvironment.fixture == "records" {
-      records = [.note: RecordFixtureCatalog.notes, .journal: RecordFixtureCatalog.journals]
-    } else {
-      records = [.note: [], .journal: []]
+      recordsByKind = records
+      noteCount = records[.note]?.count ?? 0
+      journalCount = records[.journal]?.count ?? 0
+      selectedRecordIDs = records.reduce(into: [RecordKind: UUID?]()) { result, entry in
+        result[entry.key] = entry.value.first?.id
+      }
     }
 
-    recordsByKind = records
-    noteCount = records[.note]?.count ?? 0
-    journalCount = records[.journal]?.count ?? 0
-    selectedRecordIDs = records.reduce(into: [RecordKind: UUID?]()) { result, entry in
-      result[entry.key] = entry.value.first?.id
-    }
+    applyContentStateOverride()
+  }
+
+  func retryContentLoad() {
+    guard canRetryContentLoad else { return }
+    canRetryContentLoad = false
+    contentState = hasRecords ? .loaded : .empty
   }
 
   func records(for kind: RecordKind) -> [Record] {
@@ -151,5 +161,20 @@ final class ShellModel {
     )
     effectiveSidebarVisible = resolution.sidebarVisible
     effectiveInspectorVisible = resolution.inspectorVisible
+  }
+
+  private var hasRecords: Bool {
+    recordsByKind.values.contains { !$0.isEmpty }
+  }
+
+  private func applyContentStateOverride() {
+    if let rawState = ShellEnvironment.shellState,
+      let requestedState = ShellContentState(rawValue: rawState)
+    {
+      contentState = requestedState
+    } else {
+      contentState = hasRecords ? .loaded : .empty
+    }
+    canRetryContentLoad = contentState == .error && ShellEnvironment.fixture == "error-retry"
   }
 }

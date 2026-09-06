@@ -19,26 +19,39 @@ struct RecordListView: View {
       .accessibilityLabel("Record kind")
       .accessibilityIdentifier("record-kind")
 
-      if groups.isEmpty {
-        RecordListEmptyView(query: model.searchQuery)
-      } else {
-        List(selection: selectionBinding) {
-          ForEach(groups) { group in
-            Section(group.month.title) {
-              ForEach(group.records) { record in
-                RecordRow(record: record)
-                  .tag(record.id)
-              }
-            }
-          }
-        }
-        .listStyle(.inset)
-        .accessibilityIdentifier("record-list")
-      }
+      content
     }
     .background(SynoraSemanticColor.list.color)
     .accessibilityLabel("Record list")
     .accessibilityIdentifier("record-list")
+  }
+
+  private var content: AnyView {
+    switch model.contentState {
+    case .loaded, .empty:
+      if groups.isEmpty || model.contentState == .empty {
+        return AnyView(RecordListEmptyView(query: model.searchQuery))
+      } else {
+        return AnyView(
+          List(selection: selectionBinding) {
+            ForEach(groups) { group in
+              Section(group.month.title) {
+                ForEach(group.records) { record in
+                  RecordRow(record: record)
+                    .tag(record.id)
+                }
+              }
+            }
+          }
+          .listStyle(.inset))
+      }
+    case .loading, .error, .offline, .conflict:
+      return AnyView(
+        ShellStateView(
+          state: model.contentState,
+          retry: model.canRetryContentLoad ? { model.retryContentLoad() } : nil
+        ))
+    }
   }
 
   private var groups: [RecordGroup] {

@@ -103,6 +103,22 @@ final class SynoraWikiTests: XCTestCase {
     XCTAssertEqual(model.selectedRecordIDs[.note] ?? nil, selectedID)
   }
 
+  func testShellContentStateCatalogIsCompleteAndSemantic() {
+    XCTAssertEqual(ShellContentState.allCases.count, 6)
+    XCTAssertEqual(Set(ShellContentState.allCases.map(\.title)).count, 6)
+    XCTAssertEqual(Set(ShellContentState.allCases.map(\.message)).count, 6)
+    XCTAssertEqual(Set(ShellContentState.allCases.map(\.systemImage)).count, 6)
+  }
+
+  func testShellModelDefaultsToRealEmptyLibraryState() {
+    let model = ShellModel()
+
+    model.loadRecordsIfNeeded()
+
+    XCTAssertEqual(model.contentState, .empty)
+    XCTAssertFalse(model.canRetryContentLoad)
+  }
+
   func testRecordListProjectionGroupsMonthsAndKeepsStableOrder() {
     let records = [
       Record(

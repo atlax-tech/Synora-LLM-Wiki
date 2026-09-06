@@ -116,6 +116,7 @@ struct ShellRootView: View {
       ShellStatusBar(
         selectedRecordKind: model.selectedRecordKind,
         hasSelection: model.selectedRecord(for: model.selectedRecordKind) != nil,
+        contentState: model.contentState,
         isInspectorSpaceLimited: !model.inspectorToggleEnabled
       )
     }
@@ -179,6 +180,7 @@ struct ShellRootView: View {
 private struct ShellStatusBar: View {
   let selectedRecordKind: RecordKind
   let hasSelection: Bool
+  let contentState: ShellContentState
   let isInspectorSpaceLimited: Bool
 
   var body: some View {
@@ -196,9 +198,12 @@ private struct ShellStatusBar: View {
           .font(SynoraTypography.metadata.font)
           .foregroundStyle(SynoraSemanticColor.inkSecondary.color)
       } else {
-        Label("Local library", systemImage: "internaldrive")
-          .font(SynoraTypography.metadata.font)
-          .foregroundStyle(SynoraSemanticColor.inkSecondary.color)
+        Label(
+          contentState == .loaded ? "Local library" : contentState.title,
+          systemImage: contentState == .loaded ? "internaldrive" : contentState.systemImage
+        )
+        .font(SynoraTypography.metadata.font)
+        .foregroundStyle(SynoraSemanticColor.inkSecondary.color)
       }
     }
     .padding(.horizontal, SynoraSpacing.md)
