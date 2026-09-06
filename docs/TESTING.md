@@ -2,23 +2,19 @@
 
 适用范围以 [PRODUCT §5.3](PRODUCT.md#53-当前服务与交付边界) 为准；DEFERRED 项不进入任何已规划阶段的依赖、完成率或退出门槛，不记为 BLOCKED，不要求 Apple 开发者账号。
 
-状态：CONFIRMED（测试要求）；原生测试命令与结果 UNRESOLVED，未创建工程、未运行产品测试。
+本文定义测试分层和各阶段应覆盖的行为；实际结果记入阶段日志或 traceability，不在本文维护实时状态。
 
-测试替身仅可用于单元/故障注入；不能替代真实实现、设备或供应商验收。
+测试替身、mock 和 fixture 可用于单元测试、故障注入、确定性回归和风险探针。最终功能或版本验收才必须使用实际产品路径；不得用替身冒充真实交付。
 
-## 全局测试方法
+## 验证层级
 
-| 方法 | 何时运行 | 主要产物 |
+| 层级 | 何时运行 | 范围 |
 |---|---|---|
-| Unit/Property | 每次提交 | XCTest/Swift Testing 报告、随机种子 |
-| Integration | 每个 PR、每日主干 | 临时库、迁移、作业、索引、Keychain fake |
-| Contract | Provider/公开音乐天气 API/MCP 变更 | 录制 fixture、schema diff、live opt-in 结果 |
-| Snapshot | UI 变更 | 三尺寸基线、差异图、颜色/布局阈值 |
-| XCUITest | 每个 Feature 合入 | 核心路径视频/日志、失败截图 |
-| Performance | 每日主干、阶段出口 | 启动/输入/搜索/导入 trend |
-| Recovery/Fault injection | 存储、AI、外部集成、Skill 变更 | kill/断网/磁盘满/重复事件报告 |
-| Accessibility | 每阶段 | VoiceOver 脚本、键盘路径、对比度报告 |
-| Security | P0 后持续，P6/P9 完整运行 | threat model、依赖/权限/日志扫描 |
+| Focused | 每个完整改动 | 最接近受影响代码的构建、单测或手工检查 |
+| Stage | 阶段或完整 Feature 出口 | 受影响模块的集成、UI、性能、恢复或安全检查 |
+| Version | 完整版本/发布候选 | 全量回归、空机/恢复、长时运行、全可访问性和独立对抗审查 |
+
+选择测试由改动影响决定，不由 commit 数量决定。一个改动未触及 UI、迁移、外部集成或安全边界时，不强制运行对应矩阵。
 
 ## 测试分层与预算
 
@@ -26,7 +22,7 @@
 
 | 层 | 内容 | 门槛 |
 |---|---|---|
-| Unit | domain、block operations、risk policy、routing、merge | 核心包行覆盖 ≥ 85%，分支 ≥ 75% |
+| Unit | domain、block operations、risk policy、routing、merge | 稳定核心模块在所属阶段/版本出口达到行覆盖 ≥ 85%、分支 ≥ 75%；不作为每次提交门槛 |
 | Property | operation replay、顺序键、幂等、导入导出往返 | 随机序列无不变量破坏 |
 | Integration | SQLite/FTS/assets/jobs/Keychain fake | 每个迁移和失败点覆盖 |
 | Contract | 各模型 adapter、structured output、stream/cancel/error | fixture+live opt-in 双套 |
@@ -49,10 +45,11 @@
 
 ### P0 — 架构与风险探针
 
-- 使用中文/英文/emoji/组合字符/第三方输入法 fixture 验证 TextKit range。
-- 对 operation 随机生成 100k 次 insert/move/update/delete，并重放比对最终哈希。
+- 用中文/英文/emoji/组合字符 fixture 验证 TextKit range，并用一条代表性 attachment/undo 路径证明方案可行。
+- 用小型确定性 operation 序列验证 WAL、重开、幂等和 replay 核心不变量。
 - 在无付费会员/无 Team/无云容器配置下实测本地 build/test 与 GRDB 恢复；CloudKit 探针及其 fake 均 DEFERRED。
-- 让 Skill 进程崩溃、超时、请求未授权路径/域名；验证主应用与数据不受影响。
+- 执行一个真实 WASI guest，验证一次超时/取消、一次未授权拒绝和一次 XPC 崩溃隔离。完整 broker 和恶意矩阵由 P6 验收。
+- 使用 smoke profile 验证基准生成器的确定性和 full profile 规模定义；不在 P0 强制物理生成 20 GiB。
 
 ### P1 — 原生壳层与设计系统
 
@@ -66,6 +63,7 @@
 - 在 marked text 中进行换行、撤销、切换 block，确保不拆坏中文输入。
 - 导入时注入磁盘满、重复文件、损坏媒体和进程终止。
 - 100k 字+200 媒体连续输入、快速滚动和选择，记录 signpost。
+- 在真实系统输入法、VoiceOver 和 attachment 全流程上完成编辑产品验收。
 
 ### P3 — 本地数据、检索与开放库
 
@@ -73,6 +71,7 @@
 - operation property test：重复、乱序、并发和中断后最终状态一致。
 - 备份中随机损坏文件，确保恢复前校验并报告具体问题。
 - 搜索 goldens 覆盖中文、英文、混排、错别字、短语和过滤组合；无模型时新保存原文可检索。
+- 在 10k records/100k blocks/20 GiB 完整数据集上验证重放、索引、容量和媒体打开；磁盘满与反复进程中断在本阶段执行。
 
 ### P4 — AI Runtime、BYOK 与行内 AI
 
@@ -99,6 +98,7 @@
 - 尝试未授权读取、写入、联网、环境变量和进程启动。
 - XPC/WASI crash、无限循环、内存超限和取消，验证主应用稳定与事务回滚。
 - MCP server 尝试非 loopback、过期 token、重放和超大 payload。
+- 在产品 runtime 上完成文件/网络 broker、资源限制、部分提交回滚和完整恶意 Skill 矩阵。
 
 ### P7 — macOS 本地上下文与公开服务
 
@@ -124,6 +124,7 @@
 - 在干净 Mac 环境从本地构建/运行到恢复完整演练；不要求 iPhone、跨设备或公证安装。
 - 静态/动态扫描 Keychain、entitlements、网络域名、日志、Skill/MCP 边界和导出包。
 - 对发布构建而非 Debug 构建重复性能、snapshot 和 UI 主路径。
+- 运行全量回归和独立对抗审查；阶段开发不重复这一流程。
 
 ## 候选实验协议
 

@@ -2,26 +2,26 @@
 
 适用范围以 [PRODUCT §5.3](PRODUCT.md#53-当前服务与交付边界) 为准；DEFERRED 项不进入任何已规划阶段的依赖、完成率或退出门槛，不记为 BLOCKED，不要求 Apple 开发者账号。
 
-状态：P0 `CHANGES_REQUIRED`；P1–P9 `NOT_STARTED`。P0 源码基线 `771d773` 已通过本机及隔离 clone 自动质量门；真实 IME/VoiceOver/性能、存储故障注入、真实 Wasmtime guest、20 GiB corpus、sentinel 扫描与远端 CI 尚未通过，不能启动 P1。
+状态：P0 `CHANGES_REQUIRED`；P1–P9 `NOT_STARTED`。当前证据与剩余 P0 项见 [P0 traceability](p0/traceability.md)；已移交 P2/P3/P6/P9 的生产级矩阵不再作为 P0 blocker。
 
 本文件只定义任务与依赖。阶段目标见 [SPEC.md](SPEC.md)，流程见 [DEVELOPMENT.md](DEVELOPMENT.md)，测试见 [TESTING.md](TESTING.md)，验收见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 
 ## P0 — 架构与风险探针
 
-当前证据与缺口见 [P0 traceability](p0/traceability.md) 和 [2026-09-06 P0 日志](development-log/2026-09-06-p0.md)。任务范围保持不变。
+当前证据与缺口见 [P0 traceability](p0/traceability.md) 和 [2026-09-06 P0 日志](development-log/2026-09-06-p0.md)。任务 ID 和产品目标保持不变；生产级验证由实际交付该能力的后续阶段承接。
 
 ### 任务拆分
 
 | ID | 任务 | 依赖 | 输出 |
 |---|---|---|---|
 | P0-01 | 建立 Xcode workspace、targets、SwiftPM packages 和配置分层 | 无 | 可构建工程骨架 |
-| P0-02 | 建立格式化、静态检查、单测、UI 测试与 CI | P0-01 | 质量门脚本与 CI 配置 |
+| P0-02 | 建立格式化、相关单测与基础 CI | P0-01 | 可重复的 focused/stage 检查 |
 | P0-03 | 定义 Domain entities、Repository/Clock/ID/Transaction 协议 | P0-01 | `SynoraDomain` v0 |
-| P0-04 | TextKit 2 探针：IME、block ranges、attachment、undo、VoiceOver | P0-01 | 编辑器可行性报告 |
-| P0-05 | GRDB WAL、operation log、snapshot/replay 探针 | P0-03 | 存储可行性报告 |
+| P0-04 | TextKit 2 代表性探针：Unicode/IME range、一条 attachment 和 undo 路径 | P0-01 | 编辑模型可行性报告 |
+| P0-05 | GRDB WAL、重开与小型确定性 operation replay 探针 | P0-03 | 存储路线可行性报告 |
 | P0-06 | DEFERRED：原 CKSyncEngine 同步探针，恢复需用户重新决策 | 无（移出依赖图） | 不开发、不验收、不阻塞 |
-| P0-07 | XPC + WASI Skill 权限、崩溃、取消探针 | P0-01 | 隔离可行性报告 |
-| P0-08 | 生成 10k records/100k blocks/20 GB media 基准库 | P0-03 | 固定 seed 测试数据 |
+| P0-07 | 真实 WASI guest 的 XPC 执行、超时/取消、代表性拒绝与崩溃隔离探针 | P0-01 | 隔离可行性报告 |
+| P0-08 | 建立固定 seed 基准生成器；smoke 验证确定性，full 定义 10k records/100k blocks/20 GB media | P0-03 | 可重复生成器与规模定义 |
 | P0-09 | 建立 threat model、数据分类和日志策略 | P0-03 | 安全文档 |
 | P0-10 | 完成 ADR-001…006 并冻结主要技术路线 | P0-04/05/07/08/09 | 审批后的适用 ADR；原同步 ADR 仅记录暂缓决策 |
 
@@ -63,7 +63,7 @@
 | P2-09 | 自动保存、undo/redo、crash recovery、history；交付编辑所需真实事务/操作日志，P3 延续扩展 | P0-05, P2-02 | 编辑持久性；不得使用仅探针或内存 mock 验收 |
 | P2-10 | 手帐/笔记模板和元数据行 | P2-03, P1-05 | Journal editing |
 | P2-11 | 单记录 Markdown/HTML/PDF/原始包往返 | P2-03…10 | Record exporter |
-| P2-12 | 长文/媒体/IME/VoiceOver 性能与稳定性收敛 | 全部 | Editor quality gate |
+| P2-12 | 真实 IME/VoiceOver、attachment 全流程及 100k 字/200 媒体性能与稳定性收敛 | 全部 | Editor quality gate |
 
 测试方法见 [TESTING.md](TESTING.md)，退出门槛见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 
@@ -83,7 +83,7 @@
 | P3-08 | Synora 开放格式 materializer/parser | P3-01, P2-11 | Library format v1 |
 | P3-09 | 全量/增量备份、校验、恢复和库健康工具 | P3-02, P3-04, P3-08 | Recovery tools |
 | P3-10 | 删除/tombstone/保留期与回收站 | P3-01…04 | Deletion lifecycle |
-| P3-11 | 10k/100k 数据集性能与故障注入 | 全部 | Storage/search report |
+| P3-11 | 物理生成 10k records/100k blocks/20 GB media，收口重放、索引、媒体打开、磁盘满和中断恢复 | 全部 | Storage/search/asset report |
 
 测试方法见 [TESTING.md](TESTING.md)，退出门槛见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 
@@ -140,14 +140,14 @@
 | P6-02 | staging 解包、hash/signature、原子安装 | P6-01 | Installer |
 | P6-03 | 权限模型、grant store 与权限预览 UI | P6-01, P4-02 | Permission center |
 | P6-04 | Prompt-only runtime 与工具白名单 | P6-03, P4-10 | Prompt skills |
-| P6-05 | WASI runtime、资源限制和虚拟文件系统 | P0-07, P6-03 | Executable skills |
-| P6-06 | 网络 broker、域名/方法/大小/超时策略 | P6-03/05 | Network capability |
+| P6-05 | WASI runtime、资源限制、虚拟文件系统和文件 broker | P0-07, P6-03 | Executable skills |
+| P6-06 | 网络 broker、域名/方法/大小/超时策略及真实 allow/deny 矩阵 | P6-03/05 | Network capability |
 | P6-07 | 启停、升级、降级、卸载与依赖冲突 | P6-02 | Lifecycle manager |
 | P6-08 | 调用审计、诊断与撤销关联 | P6-04…07 | Skill audit |
 | P6-09 | MCP client、授权和 tool schema translation | P4-10, P6-03 | MCP client |
 | P6-10 | loopback MCP server、短期 token 与关闭开关 | P6-03, P5-09 | Local MCP server |
 | P6-11 | 三个示例 Skill、SDK 和安全文档 | P6-04…10 | Reference skills |
-| P6-12 | 恶意包/注入/越权/崩溃/资源耗尽测试 | 全部 | Security report |
+| P6-12 | 恶意包/注入/越权/崩溃/取消/资源耗尽及未提交写入回滚矩阵 | 全部 | Security report |
 
 测试方法见 [TESTING.md](TESTING.md)，退出门槛见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 
@@ -209,6 +209,6 @@
 | P9-07 | VoiceOver、键盘、对比度、减少动态和中英文本地化 | P1–P8 | Accessibility sign-off |
 | P9-08 | App Sandbox/Hardened Runtime、本地无需付费会员的构建与打包 | P9-06 | Release app |
 | P9-09 | 可复现开源构建、许可证、数据格式和 SDK 文档 | P9-08 | Source release |
-| P9-10 | 执行当前范围八个端到端验收场景 | 全部 | Final acceptance |
+| P9-10 | 执行当前范围八个端到端验收场景，完成全量回归与独立对抗审查 | 全部 | Final acceptance |
 
 测试方法见 [TESTING.md](TESTING.md)，退出门槛见 [ACCEPTANCE.md](ACCEPTANCE.md)。
