@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 public struct SynoraColorToken: Equatable, Sendable {
@@ -5,44 +6,151 @@ public struct SynoraColorToken: Equatable, Sendable {
   public let green: Double
   public let blue: Double
   public let alpha: Double
+  private let darkRed: Double?
+  private let darkGreen: Double?
+  private let darkBlue: Double?
+  private let darkAlpha: Double?
 
   public init(red: Double, green: Double, blue: Double, alpha: Double = 1) {
     self.red = red
     self.green = green
     self.blue = blue
     self.alpha = alpha
+    darkRed = nil
+    darkGreen = nil
+    darkBlue = nil
+    darkAlpha = nil
+  }
+
+  fileprivate init(light: SynoraColorToken, dark: SynoraColorToken) {
+    red = light.red
+    green = light.green
+    blue = light.blue
+    alpha = light.alpha
+    darkRed = dark.red
+    darkGreen = dark.green
+    darkBlue = dark.blue
+    darkAlpha = dark.alpha
+  }
+
+  public static func == (lhs: SynoraColorToken, rhs: SynoraColorToken) -> Bool {
+    lhs.red == rhs.red
+      && lhs.green == rhs.green
+      && lhs.blue == rhs.blue
+      && lhs.alpha == rhs.alpha
   }
 
   public var color: Color {
-    Color(.sRGB, red: red, green: green, blue: blue, opacity: alpha)
+    let token = self
+    return Color(
+      nsColor: NSColor(name: nil) { appearance in
+        token.resolved(for: appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
+          .nsColor
+      }
+    )
+  }
+
+  public func resolved(for colorScheme: ColorScheme) -> SynoraColorToken {
+    resolved(for: colorScheme == .dark)
+  }
+
+  private func resolved(for dark: Bool) -> SynoraColorToken {
+    guard
+      dark,
+      let darkRed,
+      let darkGreen,
+      let darkBlue,
+      let darkAlpha
+    else {
+      return SynoraColorToken(red: red, green: green, blue: blue, alpha: alpha)
+    }
+
+    return SynoraColorToken(
+      red: darkRed,
+      green: darkGreen,
+      blue: darkBlue,
+      alpha: darkAlpha
+    )
+  }
+
+  private var nsColor: NSColor {
+    NSColor(
+      srgbRed: red,
+      green: green,
+      blue: blue,
+      alpha: alpha
+    )
   }
 }
 
+private func adaptiveColor(
+  light: (Double, Double, Double),
+  dark: (Double, Double, Double),
+  alpha: Double = 1
+) -> SynoraColorToken {
+  SynoraColorToken(
+    light: SynoraColorToken(red: light.0, green: light.1, blue: light.2, alpha: alpha),
+    dark: SynoraColorToken(red: dark.0, green: dark.1, blue: dark.2, alpha: alpha)
+  )
+}
+
 public enum SynoraSemanticColor {
-  public static let inkPrimary = SynoraColorToken(
-    red: 0x15 / 255, green: 0x1A / 255, blue: 0x2D / 255)
-  public static let inkSecondary = SynoraColorToken(
-    red: 0x68 / 255, green: 0x70 / 255, blue: 0x83 / 255)
-  public static let inkTertiary = SynoraColorToken(
-    red: 0x96 / 255, green: 0x9C / 255, blue: 0xAB / 255)
-  public static let canvas = SynoraColorToken(red: 1, green: 1, blue: 1)
-  public static let sidebar = SynoraColorToken(red: 0xF4 / 255, green: 0xF5 / 255, blue: 0xF7 / 255)
-  public static let list = SynoraColorToken(red: 0xFB / 255, green: 0xFB / 255, blue: 0xFC / 255)
-  public static let inspector = SynoraColorToken(
-    red: 0xF7 / 255, green: 0xF8 / 255, blue: 0xFA / 255)
-  public static let borderSubtle = SynoraColorToken(
-    red: 0xE8 / 255, green: 0xEA / 255, blue: 0xF0 / 255)
-  public static let accentPrimary = SynoraColorToken(
-    red: 0x5C / 255, green: 0x75 / 255, blue: 0xE7 / 255)
-  public static let accentText = SynoraColorToken(
-    red: 0x52 / 255, green: 0x68 / 255, blue: 0xC8 / 255)
-  public static let accentSoft = SynoraColorToken(red: 0xEA / 255, green: 0xF0 / 255, blue: 1)
-  public static let aiPrimary = SynoraColorToken(
-    red: 0x76 / 255, green: 0x69 / 255, blue: 0xEF / 255)
-  public static let journalHighlight = SynoraColorToken(
-    red: 0xEF / 255, green: 0x7F / 255, blue: 0xB4 / 255)
-  public static let warningInline = SynoraColorToken(
-    red: 0xF3 / 255, green: 0xA5 / 255, blue: 0x1D / 255)
+  public static let inkPrimary = adaptiveColor(
+    light: (0x15 / 255, 0x1A / 255, 0x2D / 255),
+    dark: (0xF2 / 255, 0xF2 / 255, 0xF7 / 255)
+  )
+  public static let inkSecondary = adaptiveColor(
+    light: (0x68 / 255, 0x70 / 255, 0x83 / 255),
+    dark: (0xAE / 255, 0xAE / 255, 0xB2 / 255)
+  )
+  public static let inkTertiary = adaptiveColor(
+    light: (0x96 / 255, 0x9C / 255, 0xAB / 255),
+    dark: (0x8E / 255, 0x8E / 255, 0x93 / 255)
+  )
+  public static let canvas = adaptiveColor(
+    light: (1, 1, 1),
+    dark: (0x1C / 255, 0x1C / 255, 0x1E / 255)
+  )
+  public static let sidebar = adaptiveColor(
+    light: (0xF4 / 255, 0xF5 / 255, 0xF7 / 255),
+    dark: (0x24 / 255, 0x24 / 255, 0x26 / 255)
+  )
+  public static let list = adaptiveColor(
+    light: (0xFB / 255, 0xFB / 255, 0xFC / 255),
+    dark: (0x1E / 255, 0x1E / 255, 0x20 / 255)
+  )
+  public static let inspector = adaptiveColor(
+    light: (0xF7 / 255, 0xF8 / 255, 0xFA / 255),
+    dark: (0x24 / 255, 0x24 / 255, 0x26 / 255)
+  )
+  public static let borderSubtle = adaptiveColor(
+    light: (0xE8 / 255, 0xEA / 255, 0xF0 / 255),
+    dark: (0x38 / 255, 0x38 / 255, 0x3A / 255)
+  )
+  public static let accentPrimary = adaptiveColor(
+    light: (0x5C / 255, 0x75 / 255, 0xE7 / 255),
+    dark: (0x8E / 255, 0xA2 / 255, 1)
+  )
+  public static let accentText = adaptiveColor(
+    light: (0x52 / 255, 0x68 / 255, 0xC8 / 255),
+    dark: (0xA8 / 255, 0xB7 / 255, 1)
+  )
+  public static let accentSoft = adaptiveColor(
+    light: (0xEA / 255, 0xF0 / 255, 1),
+    dark: (0x2B / 255, 0x35 / 255, 0x59 / 255)
+  )
+  public static let aiPrimary = adaptiveColor(
+    light: (0x76 / 255, 0x69 / 255, 0xEF / 255),
+    dark: (0x9B / 255, 0x90 / 255, 1)
+  )
+  public static let journalHighlight = adaptiveColor(
+    light: (0xEF / 255, 0x7F / 255, 0xB4 / 255),
+    dark: (0xF0 / 255, 0x96 / 255, 0xC1 / 255)
+  )
+  public static let warningInline = adaptiveColor(
+    light: (0xF3 / 255, 0xA5 / 255, 0x1D / 255),
+    dark: (0xF5 / 255, 0xB9 / 255, 0x4D / 255)
+  )
 }
 
 public enum SynoraFontWeight: String, Equatable, Sendable {

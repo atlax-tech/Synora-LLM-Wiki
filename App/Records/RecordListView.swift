@@ -7,13 +7,14 @@ struct RecordListView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      Picker("Record kind", selection: recordKindBinding) {
+      Picker("Record kind", selection: selectedRecordKindBinding) {
         ForEach(RecordKind.allCases, id: \.self) { kind in
           Text(kind.title).tag(kind)
         }
       }
       .pickerStyle(.segmented)
       .labelsHidden()
+      .controlSize(.regular)
       .padding(.horizontal, SynoraSpacing.md)
       .padding(.vertical, SynoraSpacing.sm)
       .accessibilityLabel("Record kind")
@@ -70,7 +71,7 @@ struct RecordListView: View {
     )
   }
 
-  private var recordKindBinding: Binding<RecordKind> {
+  private var selectedRecordKindBinding: Binding<RecordKind> {
     Binding(
       get: { model.selectedRecordKind },
       set: { model.selectRecordKind($0) }

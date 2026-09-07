@@ -11,7 +11,10 @@ enum ShellLayoutPolicy {
   static let editorMinimumWidth: CGFloat = 500
   static let inspectorWidth: CGFloat = 280
   // Native split-view chrome needs extra horizontal room beyond the content columns.
-  static let fourColumnMinimumWidth: CGFloat = 1560
+  // The documented four-column content budget is 1268 pt. Reserve additional
+  // room for native split-view chrome while still allowing the inspector at
+  // the recommended 1440 pt content width.
+  static let fourColumnMinimumWidth: CGFloat = 1400
   // The native inspector needs extra room for split-view chrome at compact widths.
   static let inspectorWithListMinimumWidth: CGFloat = 1360
 
@@ -20,18 +23,17 @@ enum ShellLayoutPolicy {
     desiredSidebarVisible: Bool,
     desiredInspectorVisible: Bool
   ) -> ShellLayoutResolution {
-    guard desiredInspectorVisible else {
-      return ShellLayoutResolution(sidebarVisible: desiredSidebarVisible, inspectorVisible: false)
+    if desiredSidebarVisible {
+      return ShellLayoutResolution(
+        sidebarVisible: true,
+        inspectorVisible: desiredInspectorVisible && availableWidth >= fourColumnMinimumWidth
+      )
     }
 
-    if availableWidth >= fourColumnMinimumWidth {
-      return ShellLayoutResolution(sidebarVisible: desiredSidebarVisible, inspectorVisible: true)
-    }
-
-    guard availableWidth >= inspectorWithListMinimumWidth else {
-      return ShellLayoutResolution(sidebarVisible: desiredSidebarVisible, inspectorVisible: false)
-    }
-
-    return ShellLayoutResolution(sidebarVisible: false, inspectorVisible: true)
+    return ShellLayoutResolution(
+      sidebarVisible: false,
+      inspectorVisible: desiredInspectorVisible
+        && availableWidth >= inspectorWithListMinimumWidth
+    )
   }
 }

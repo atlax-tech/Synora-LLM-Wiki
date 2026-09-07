@@ -6,7 +6,7 @@ import SwiftUI
 final class ShellModel {
   private(set) var availableContentWidth: CGFloat = 1440
   private(set) var effectiveSidebarVisible = true
-  private(set) var effectiveInspectorVisible = true
+  private(set) var effectiveInspectorVisible = false
   private(set) var commandPalettePresented = false
   private(set) var selectedRecordKind: RecordKind = .note
   private(set) var searchQuery = ""
@@ -22,7 +22,7 @@ final class ShellModel {
   private(set) var desiredSidebarVisible: Bool
   private(set) var desiredInspectorVisible: Bool
 
-  init(desiredSidebarVisible: Bool = true, desiredInspectorVisible: Bool = true) {
+  init(desiredSidebarVisible: Bool = true, desiredInspectorVisible: Bool = false) {
     self.desiredSidebarVisible = desiredSidebarVisible
     self.desiredInspectorVisible = desiredInspectorVisible
     reconcile(width: availableContentWidth)
@@ -131,16 +131,11 @@ final class ShellModel {
       selectedRecordKind = recordKind
     }
 
-    switch item {
-    case .context:
-      inspectorMode = .context
-      setDesiredInspectorVisible(true)
-    case .skills:
-      inspectorMode = .skills
-      setDesiredInspectorVisible(true)
-    default:
-      break
-    }
+  }
+
+  func presentInspector(_ mode: InspectorMode) {
+    inspectorMode = mode
+    setDesiredInspectorVisible(true)
   }
 
   func setInspectorMode(_ mode: InspectorMode) {

@@ -29,7 +29,6 @@ struct WindowMetricsReader: NSViewRepresentable {
 
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
-      window?.appearance = NSAppearance(named: .aqua)
       applyContentSizeOverrideIfNeeded()
       report()
     }
@@ -73,12 +72,20 @@ struct WindowMetricsReader: NSViewRepresentable {
       let requestedFrameSize = window.frameRect(forContentRect: requestedContentRect).size
       var frame = window.frame
       var frameSize = requestedFrameSize
-      if let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
+      let targetScreen = NSScreen.screens.first {
+        $0.visibleFrame.width >= requestedFrameSize.width
+          && $0.visibleFrame.height >= requestedFrameSize.height
+      }
+      let visibleFrame =
+        targetScreen?.visibleFrame
+        ?? window.screen?.visibleFrame
+        ?? NSScreen.main?.visibleFrame
+      if !ShellEnvironment.isUITesting, let visibleFrame {
         frameSize.width = min(frameSize.width, visibleFrame.width)
         frameSize.height = min(frameSize.height, visibleFrame.height)
       }
       frame.size = frameSize
-      if let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
+      if let visibleFrame {
         frame.origin.x = max(
           visibleFrame.minX,
           min(frame.origin.x, visibleFrame.maxX - frame.width)

@@ -3,6 +3,13 @@ import Foundation
 enum ShellAccessibilityID {
   static let window = "window"
   static let sidebar = "sidebar"
+  static let sidebarBrand = "sidebar-brand"
+  static let toolbarSearchButton = "toolbar-search-button"
+  static let toolbarSearchField = "toolbar-search-field"
+  static let toolbarContext = "toolbar-context"
+  static let toolbarSkills = "toolbar-skills"
+  static let toolbarInspector = "toggle-inspector"
+  static let toolbarCommandPalette = "command-palette-button"
   static let recordList = "record-list"
   static let editor = "editor"
   static let inspector = "inspector"
@@ -12,6 +19,7 @@ enum ShellAccessibilityID {
   static let recordKind = "record-kind"
   static let commandPalette = "command-palette"
   static let shellState = "shell-state"
+  static let themeToggle = "theme-toggle"
 
   static func sidebarItem(_ item: SidebarItem) -> String {
     "sidebar-\(item.rawValue)"

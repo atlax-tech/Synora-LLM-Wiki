@@ -15,12 +15,12 @@ struct InspectorShellView: View {
       }
       .pickerStyle(.segmented)
       .labelsHidden()
+      .controlSize(.regular)
       .padding(.horizontal, SynoraSpacing.md)
       .padding(.vertical, SynoraSpacing.sm)
       .accessibilityLabel("Inspector mode")
       .accessibilityValue(model.inspectorMode.title)
       .accessibilityHint("Switches between record context and AI skill availability")
-      .accessibilityIdentifier("inspector-mode")
 
       ScrollView {
         Group {
@@ -34,6 +34,7 @@ struct InspectorShellView: View {
         .padding(SynoraSpacing.md)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
+
     }
     .background(SynoraSemanticColor.inspector.color)
     .accessibilityLabel("Inspector")

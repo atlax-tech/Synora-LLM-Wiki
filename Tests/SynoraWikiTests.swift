@@ -30,14 +30,14 @@ final class SynoraWikiTests: XCTestCase {
     XCTAssertEqual(resolution, .init(sidebarVisible: true, inspectorVisible: false))
   }
 
-  func testLayoutPolicyCollapsesSidebarWhenInspectorFits() {
+  func testLayoutPolicyKeepsSidebarWhenInspectorWouldOtherwiseFit() {
     let resolution = ShellLayoutPolicy.resolve(
       availableWidth: ShellLayoutPolicy.inspectorWithListMinimumWidth,
       desiredSidebarVisible: true,
       desiredInspectorVisible: true
     )
 
-    XCTAssertEqual(resolution, .init(sidebarVisible: false, inspectorVisible: true))
+    XCTAssertEqual(resolution, .init(sidebarVisible: true, inspectorVisible: false))
   }
 
   func testLayoutPolicyRejectsInspectorBelowEditorMinimumWidth() {
@@ -61,12 +61,15 @@ final class SynoraWikiTests: XCTestCase {
   }
 
   func testSidebarSectionsExposeStableP1NavigationAndCounts() {
-    XCTAssertEqual(SidebarSections.all.count, 4)
+    XCTAssertEqual(SidebarSections.all.count, 3)
     XCTAssertEqual(SidebarSections.all[0].items, [.today, .inbox])
     XCTAssertEqual(SidebarSections.all[1].items, [.allNotes, .topics, .tags, .favorites, .trash])
     XCTAssertEqual(
       SidebarSections.all[2].items, [.allJournals, .journalYears, .travel, .life, .daily, .ideas])
-    XCTAssertEqual(SidebarSections.all[3].items, [.context, .skills])
+    XCTAssertFalse(SidebarSections.all.contains { $0.title == "Tools" })
+    XCTAssertFalse(
+      SidebarItem.allCases.contains { $0.rawValue == "context" || $0.rawValue == "skills" }
+    )
   }
 
   func testSidebarRecordSelectionProjectsIntoRecordKind() {
@@ -78,12 +81,11 @@ final class SynoraWikiTests: XCTestCase {
     XCTAssertEqual(model.selectedRecordKind, .journal)
   }
 
-  func testSidebarToolSelectionProjectsIntoInspectorMode() {
+  func testToolbarInspectorPresentationProjectsIntoInspectorMode() {
     let model = ShellModel()
 
-    model.selectSidebarItem(.skills)
+    model.presentInspector(.skills)
 
-    XCTAssertEqual(model.sidebarSelection, .skills)
     XCTAssertEqual(model.inspectorMode, .skills)
     XCTAssertTrue(model.desiredInspectorVisible)
   }
@@ -132,6 +134,12 @@ final class SynoraWikiTests: XCTestCase {
   func testAccessibilityIdentifiersRemainStable() {
     XCTAssertEqual(ShellAccessibilityID.window, "window")
     XCTAssertEqual(ShellAccessibilityID.sidebar, "sidebar")
+    XCTAssertEqual(ShellAccessibilityID.sidebarBrand, "sidebar-brand")
+    XCTAssertEqual(ShellAccessibilityID.toolbarSearchButton, "toolbar-search-button")
+    XCTAssertEqual(ShellAccessibilityID.toolbarContext, "toolbar-context")
+    XCTAssertEqual(ShellAccessibilityID.toolbarSkills, "toolbar-skills")
+    XCTAssertEqual(ShellAccessibilityID.toolbarInspector, "toggle-inspector")
+    XCTAssertEqual(ShellAccessibilityID.toolbarCommandPalette, "command-palette-button")
     XCTAssertEqual(ShellAccessibilityID.recordList, "record-list")
     XCTAssertEqual(ShellAccessibilityID.editor, "editor")
     XCTAssertEqual(ShellAccessibilityID.inspector, "inspector")
@@ -139,7 +147,8 @@ final class SynoraWikiTests: XCTestCase {
     XCTAssertEqual(ShellAccessibilityID.recordKind, "record-kind")
     XCTAssertEqual(ShellAccessibilityID.commandPalette, "command-palette")
     XCTAssertEqual(ShellAccessibilityID.shellState, "shell-state")
-    XCTAssertEqual(ShellAccessibilityID.sidebarItem(.skills), "sidebar-skills")
+    XCTAssertEqual(ShellAccessibilityID.themeToggle, "theme-toggle")
+    XCTAssertEqual(ShellAccessibilityID.sidebarItem(.allJournals), "sidebar-allJournals")
   }
 
   func testRecordListProjectionGroupsMonthsAndKeepsStableOrder() {

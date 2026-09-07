@@ -53,6 +53,14 @@ enum ShellEnvironment {
     value(for: "SYNORA_DISABLE_ANIMATIONS") == "1"
   }
 
+  static var forcedDarkMode: Bool? {
+    switch value(for: "SYNORA_THEME")?.lowercased() {
+    case "dark": true
+    case "light": false
+    default: nil
+    }
+  }
+
   static var requestedContentSize: CGSize? {
     guard let rawValue = value(for: "SYNORA_CONTENT_SIZE") else { return nil }
     let components = rawValue.split(separator: "x", maxSplits: 1).compactMap { Double($0) }

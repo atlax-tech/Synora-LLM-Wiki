@@ -109,12 +109,6 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "同步冲突" } }
       }
     },
-    "Tools" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tools" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工具" } }
-      }
-    },
     "Today" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Today" } },

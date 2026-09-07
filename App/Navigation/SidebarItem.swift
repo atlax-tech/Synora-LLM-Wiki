@@ -14,8 +14,6 @@ enum SidebarItem: String, CaseIterable, Hashable, Identifiable, Sendable {
   case life
   case daily
   case ideas
-  case context
-  case skills
 
   var id: Self { self }
 
@@ -47,10 +45,6 @@ enum SidebarItem: String, CaseIterable, Hashable, Identifiable, Sendable {
       String(localized: "Daily")
     case .ideas:
       String(localized: "Ideas")
-    case .context:
-      String(localized: "Context")
-    case .skills:
-      String(localized: "AI Skills")
     }
   }
 
@@ -82,10 +76,6 @@ enum SidebarItem: String, CaseIterable, Hashable, Identifiable, Sendable {
       "clock"
     case .ideas:
       "lightbulb"
-    case .context:
-      "square.stack.3d.up"
-    case .skills:
-      "wand.and.stars"
     }
   }
 
@@ -95,7 +85,7 @@ enum SidebarItem: String, CaseIterable, Hashable, Identifiable, Sendable {
       .note
     case .allJournals, .journalYears, .travel, .life, .daily, .ideas:
       .journal
-    case .today, .inbox, .context, .skills:
+    case .today, .inbox:
       nil
     }
   }
@@ -107,16 +97,17 @@ struct SidebarSection: Equatable, Sendable {
 }
 
 enum SidebarSections {
-  static let all: [SidebarSection] = [
-    SidebarSection(title: String(localized: "Home"), items: [.today, .inbox]),
-    SidebarSection(
-      title: String(localized: "Knowledge"),
-      items: [.allNotes, .topics, .tags, .favorites, .trash]
-    ),
-    SidebarSection(
-      title: String(localized: "Journal"),
-      items: [.allJournals, .journalYears, .travel, .life, .daily, .ideas]
-    ),
-    SidebarSection(title: String(localized: "Tools"), items: [.context, .skills]),
-  ]
+  static let home = SidebarSection(
+    title: String(localized: "Home"),
+    items: [.today, .inbox]
+  )
+  static let knowledge = SidebarSection(
+    title: String(localized: "Knowledge"),
+    items: [.allNotes, .topics, .tags, .favorites, .trash]
+  )
+  static let journal = SidebarSection(
+    title: String(localized: "Journal"),
+    items: [.allJournals, .journalYears, .travel, .life, .daily, .ideas]
+  )
+  static let all: [SidebarSection] = [home, knowledge, journal]
 }
