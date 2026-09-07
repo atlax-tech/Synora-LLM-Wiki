@@ -48,6 +48,8 @@ public struct TextStorageAdapter: Sendable {
     guard let startIndex = index(containing: range.location, preferPrevious: true),
       let endIndex = index(containing: NSMaxRange(range), preferPrevious: true)
     else { throw EditorError.invalidSelection }
+    guard blocks[startIndex].type.supportsTextEditing,
+      blocks[endIndex].type.supportsTextEditing else { throw EditorError.invalidSelection }
 
     let startRange = ranges[startIndex].range
     let endRange = ranges[endIndex].range
@@ -66,7 +68,8 @@ public struct TextStorageAdapter: Sendable {
       for piece in pieces.dropFirst().dropLast() {
         updated.append(Block(
           id: UUID(), recordID: document.recordID, position: updated.count, text: piece,
-          type: first.type, attributes: first.attributes, unknownFields: first.unknownFields))
+          type: first.type, attributes: first.attributes, unknownFields: first.unknownFields,
+          content: first.content))
       }
       let lastID = endIndex == startIndex ? UUID() : blocks[endIndex].id
       let last = Block(
@@ -79,7 +82,8 @@ public struct TextStorageAdapter: Sendable {
         type: blocks[endIndex].type,
         orderKey: blocks[endIndex].orderKey,
         attributes: blocks[endIndex].attributes,
-        unknownFields: blocks[endIndex].unknownFields
+        unknownFields: blocks[endIndex].unknownFields,
+        content: blocks[endIndex].content
       )
       updated.append(last)
     }
@@ -111,9 +115,10 @@ public struct TextStorageAdapter: Sendable {
   }
 
   private static func linearizedBlocks(_ document: BlockDocument) -> [Block] {
-    func visit(_ parentID: UUID?) -> [Block] {
-      document.children(of: parentID).flatMap { block in
-        [block] + visit(block.id)
+    func visit(_ parentID: UUID?, hidden: Bool = false) -> [Block] {
+      guard !hidden else { return [] }
+      return document.children(of: parentID).flatMap { block in
+        [block] + visit(block.id, hidden: block.isCollapsed)
       }
     }
     return visit(nil)
@@ -126,6 +131,18 @@ public struct TextStorageAdapter: Sendable {
   }
 }
 
+public struct EditorFocus: Hashable, Sendable {
+  public let blockID: UUID
+  public let utf16Offset: Int
+  public let tableCell: TableCellPosition?
+
+  public init(blockID: UUID, utf16Offset: Int = 0, tableCell: TableCellPosition? = nil) {
+    self.blockID = blockID
+    self.utf16Offset = utf16Offset
+    self.tableCell = tableCell
+  }
+}
+
 public enum EditorCommand: Hashable, Sendable {
   case insertText(String)
   case setBlockType(BlockType)
@@ -135,6 +152,13 @@ public enum EditorCommand: Hashable, Sendable {
   case mergeWithNext
   case indent
   case outdent
+  case editTableCell(row: Int, column: Int, text: String)
+  case insertTableRow(at: Int?)
+  case removeTableRow(at: Int)
+  case insertTableColumn(at: Int?)
+  case removeTableColumn(at: Int)
+  case toggleCollapse
+  case setCalloutStyle(CalloutStyle)
 }
 
 public enum EditorError: Error, Equatable, Sendable {
@@ -146,10 +170,82 @@ public enum EditorError: Error, Equatable, Sendable {
 
 public struct EditorSession: Sendable {
   public private(set) var document: BlockDocument
-  private var undoStack: [BlockDocument] = []
-  private var redoStack: [BlockDocument] = []
+  public private(set) var focus: EditorFocus?
 
-  public init(document: BlockDocument) { self.document = document }
+  private struct Snapshot: Sendable {
+    let document: BlockDocument
+    let focus: EditorFocus?
+    let collapsedFocus: [UUID: EditorFocus]
+  }
+
+  private var collapsedFocus: [UUID: EditorFocus] = [:]
+  private var undoStack: [Snapshot] = []
+  private var redoStack: [Snapshot] = []
+
+  public init(document: BlockDocument) {
+    self.document = document
+    focus = nil
+  }
+
+  public var focusedBlockID: UUID? { focus?.blockID }
+
+  public mutating func focus(on blockID: UUID, atUTF16Offset offset: Int = 0) throws {
+    guard let block = document.block(id: blockID), offset >= 0 else {
+      throw EditorError.invalidSelection
+    }
+    let value = block.text as NSString
+    guard offset <= value.length, Self.isComposedBoundary(offset, in: value) else {
+      throw EditorError.invalidSelection
+    }
+    focus = EditorFocus(blockID: blockID, utf16Offset: offset)
+  }
+
+  public mutating func focus(in blockID: UUID, cell position: TableCellPosition) throws {
+    guard let block = document.block(id: blockID), block.type == .table,
+      case .table(let table)? = block.content, table.cell(at: position) != nil else {
+      throw EditorError.invalidSelection
+    }
+    focus = EditorFocus(blockID: blockID, tableCell: position)
+  }
+
+  public func tableCell(in blockID: UUID, row: Int, column: Int) -> TableCell? {
+    guard let block = document.block(id: blockID), case .table(let table)? = block.content else {
+      return nil
+    }
+    return table.cell(atRow: row, column: column)
+  }
+
+  @discardableResult
+  public mutating func navigateTable(
+    in blockID: UUID,
+    from position: TableCellPosition,
+    direction: TableNavigationDirection
+  ) throws -> TableCellPosition? {
+    guard let block = document.block(id: blockID), block.type == .table,
+      case .table(let table)? = block.content else {
+      throw EditorError.invalidSelection
+    }
+    guard let next = table.navigating(from: position, direction: direction) else { return nil }
+    focus = EditorFocus(blockID: blockID, tableCell: next)
+    return next
+  }
+
+  @discardableResult
+  public mutating func pressTab(
+    in blockID: UUID,
+    from position: TableCellPosition
+  ) throws -> TableCellPosition? {
+    if let next = try navigateTable(in: blockID, from: position, direction: .next) {
+      return next
+    }
+    guard let block = document.block(id: blockID), case .table(let table)? = block.content,
+      !table.rows.isEmpty, position.row == table.rows.count - 1,
+      position.column == table.columnCount - 1 else { return nil }
+    let next = try document.insertingTableRow(id: blockID)
+    let target = TableCellPosition(row: table.rows.count, column: 0)
+    _ = commit(next, focus: EditorFocus(blockID: blockID, tableCell: target))
+    return target
+  }
 
   @discardableResult
   public mutating func apply(range: NSRange, replacement: String, marked: Bool = false) throws
@@ -164,6 +260,8 @@ public struct EditorSession: Sendable {
   @discardableResult
   public mutating func execute(_ command: EditorCommand, blockID: UUID) throws -> BlockDocument {
     let next: BlockDocument
+    var focusAfter: EditorFocus?
+    var collapsedFocusAfter: [UUID: EditorFocus]?
     switch command {
     case .insertText(let text):
       let adapter = TextStorageAdapter(document: document)
@@ -194,8 +292,38 @@ public struct EditorSession: Sendable {
       next = try document.indenting(id: blockID, under: siblings[index - 1].id)
     case .outdent:
       next = try document.outdenting(id: blockID)
+    case .editTableCell(let row, let column, let text):
+      next = try document.editingTableCell(id: blockID, row: row, column: column, text: text)
+      focusAfter = EditorFocus(
+        blockID: blockID, tableCell: TableCellPosition(row: row, column: column))
+    case .insertTableRow(let index):
+      next = try document.insertingTableRow(id: blockID, at: index)
+    case .removeTableRow(let index):
+      next = try document.removingTableRow(id: blockID, at: index)
+    case .insertTableColumn(let index):
+      next = try document.insertingTableColumn(id: blockID, at: index)
+    case .removeTableColumn(let index):
+      next = try document.removingTableColumn(id: blockID, at: index)
+    case .toggleCollapse:
+      guard let source = document.block(id: blockID), source.type == .toggle else {
+        throw EditorError.invalidSelection
+      }
+      let collapsing = !source.isCollapsed
+      var saved = collapsedFocus
+      if collapsing, let current = focus,
+        document.descendants(of: blockID).contains(where: { $0.id == current.blockID }) {
+        saved[blockID] = current
+        focusAfter = EditorFocus(blockID: blockID, utf16Offset: source.text.utf16.count)
+      } else if !collapsing, let restored = saved.removeValue(forKey: blockID),
+        document.block(id: restored.blockID) != nil {
+        focusAfter = restored
+      }
+      collapsedFocusAfter = saved
+      next = try document.togglingCollapse(id: blockID)
+    case .setCalloutStyle(let style):
+      next = try document.settingCalloutStyle(style, for: blockID)
     }
-    return commit(next)
+    return commit(next, focus: focusAfter, collapsedFocus: collapsedFocusAfter)
   }
 
   @discardableResult
@@ -280,26 +408,94 @@ public struct EditorSession: Sendable {
       idGenerator: idGenerator))
   }
 
-  private mutating func commit(_ next: BlockDocument) -> BlockDocument {
-    guard next != document else { return document }
-    undoStack.append(document)
+  @discardableResult
+  public mutating func editTableCell(
+    in blockID: UUID,
+    row: Int,
+    column: Int,
+    text: String
+  ) throws -> BlockDocument {
+    try execute(.editTableCell(row: row, column: column, text: text), blockID: blockID)
+  }
+
+  @discardableResult
+  public mutating func toggleCollapse(in blockID: UUID) throws -> BlockDocument {
+    try execute(.toggleCollapse, blockID: blockID)
+  }
+
+  @discardableResult
+  public mutating func setCalloutStyle(
+    _ style: CalloutStyle,
+    in blockID: UUID
+  ) throws -> BlockDocument {
+    try execute(.setCalloutStyle(style), blockID: blockID)
+  }
+
+  private mutating func commit(
+    _ next: BlockDocument,
+    focus override: EditorFocus? = nil,
+    collapsedFocus map: [UUID: EditorFocus]? = nil
+  ) -> BlockDocument {
+    guard next != document else {
+      if let override { focus = resolved(override, in: document) }
+      if let map { collapsedFocus = map }
+      return document
+    }
+    undoStack.append(Snapshot(
+      document: document, focus: focus, collapsedFocus: collapsedFocus))
     redoStack.removeAll()
     document = next
+    if let override { focus = resolved(override, in: next) }
+    else { focus = resolved(focus, in: next) }
+    if let map { collapsedFocus = map }
+    collapsedFocus = collapsedFocus.filter {
+      next.block(id: $0.key) != nil && next.block(id: $0.value.blockID) != nil
+    }
     return next
   }
 
   public mutating func undo() throws -> BlockDocument {
     guard let previous = undoStack.popLast() else { throw EditorError.noUndo }
-    redoStack.append(document)
-    document = previous
+    redoStack.append(Snapshot(
+      document: document, focus: focus, collapsedFocus: collapsedFocus))
+    document = previous.document
+    focus = resolved(previous.focus, in: document)
+    collapsedFocus = previous.collapsedFocus.filter {
+      document.block(id: $0.key) != nil && document.block(id: $0.value.blockID) != nil
+    }
     return document
   }
 
   public mutating func redo() throws -> BlockDocument {
     guard let next = redoStack.popLast() else { throw EditorError.noRedo }
-    undoStack.append(document)
-    document = next
+    undoStack.append(Snapshot(
+      document: document, focus: focus, collapsedFocus: collapsedFocus))
+    document = next.document
+    focus = resolved(next.focus, in: document)
+    collapsedFocus = next.collapsedFocus.filter {
+      document.block(id: $0.key) != nil && document.block(id: $0.value.blockID) != nil
+    }
     return document
+  }
+
+  private func resolved(_ candidate: EditorFocus?, in document: BlockDocument) -> EditorFocus? {
+    guard let candidate, let block = document.block(id: candidate.blockID) else { return nil }
+    if let cell = candidate.tableCell {
+      guard case .table(let table)? = block.content, table.cell(at: cell) != nil else {
+        return nil
+      }
+      return candidate
+    }
+    let value = block.text as NSString
+    guard candidate.utf16Offset >= 0, candidate.utf16Offset <= value.length,
+      Self.isComposedBoundary(candidate.utf16Offset, in: value) else { return nil }
+    return candidate
+  }
+
+  private static func isComposedBoundary(_ offset: Int, in source: NSString) -> Bool {
+    guard offset > 0, offset < source.length else { return true }
+    let range = source.rangeOfComposedCharacterSequence(at: offset)
+    return range.location == offset || NSMaxRange(range) == offset
   }
 }
 

@@ -150,3 +150,50 @@ func crossTypeSelectionKeepsEachBlockStructure() throws {
   #expect(session.document.block(id: headingID)?.text == "新标题")
   #expect(session.document.block(id: codeID)?.text == "新代码")
 }
+
+@Test
+func advancedEditorEditsTablesNavigatesAndRestoresCollapsedFocus() throws {
+  let recordID = UUID()
+  let tableID = UUID()
+  let toggleID = UUID()
+  let childID = UUID()
+  let calloutID = UUID()
+  var session = EditorSession(document: try BlockDocument(recordID: recordID, blocks: [
+    Block(
+      id: tableID, recordID: recordID, position: 0, text: "", type: .table,
+      content: .table(TableContent(rows: [
+        [TableCell(text: "A"), TableCell(text: "B")],
+        [TableCell(text: "C"), TableCell(text: "D")],
+      ]))),
+    Block(id: toggleID, recordID: recordID, position: 1, text: "详情", type: .toggle),
+    Block(id: childID, recordID: recordID, position: 0, text: "长文本", parentID: toggleID),
+    Block(id: calloutID, recordID: recordID, position: 2, text: "提示", type: .callout),
+  ]))
+
+  _ = try session.editTableCell(in: tableID, row: 1, column: 1, text: "改过")
+  #expect(session.tableCell(in: tableID, row: 1, column: 1)?.text == "改过")
+  #expect(try session.navigateTable(
+    in: tableID,
+    from: TableCellPosition(row: 0, column: 0),
+    direction: .next) == TableCellPosition(row: 0, column: 1))
+  #expect(try session.pressTab(
+    in: tableID,
+    from: TableCellPosition(row: 1, column: 1)) == TableCellPosition(row: 2, column: 0))
+  #expect(session.tableCell(in: tableID, row: 2, column: 0) != nil)
+
+  try session.focus(on: childID, atUTF16Offset: 2)
+  _ = try session.toggleCollapse(in: toggleID)
+  #expect(session.focus?.blockID == toggleID)
+  #expect(TextStorageAdapter(document: session.document).ranges.map(\.blockID)
+    == [tableID, toggleID, calloutID])
+  _ = try session.toggleCollapse(in: toggleID)
+  #expect(session.focus == EditorFocus(blockID: childID, utf16Offset: 2))
+
+  _ = try session.setCalloutStyle(.warning, in: calloutID)
+  #expect(session.document.block(id: calloutID)?.calloutStyle == .warning)
+  #expect(throws: BlockTreeError.invalidChild(toggleID)) {
+    try session.execute(.setCalloutStyle(.info), blockID: toggleID)
+  }
+  _ = try session.undo()
+  #expect(session.focus?.blockID == childID)
+}

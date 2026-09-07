@@ -140,7 +140,7 @@ public enum BlockType: Codable, Hashable, Sendable {
 
   public var acceptsChildren: Bool {
     switch self {
-    case .bulletedList, .numberedList, .quote, .table, .toggle, .callout, .gallery:
+    case .bulletedList, .numberedList, .task, .quote, .toggle, .callout:
       true
     default:
       false
@@ -157,7 +157,7 @@ public enum BlockType: Codable, Hashable, Sendable {
   public var supportsTextEditing: Bool {
     switch self {
     case .paragraph, .heading1, .heading2, .heading3, .bulletedList, .numberedList, .task,
-      .quote, .code:
+      .quote, .code, .toggle, .callout:
       true
     default:
       false
@@ -189,6 +189,15 @@ public enum BlockType: Codable, Hashable, Sendable {
     case .unknown: "Unknown block"
     }
   }
+}
+
+public enum CalloutStyle: String, Codable, CaseIterable, Hashable, Sendable {
+  case neutral
+  case info
+  case success
+  case warning
+  case danger
+  case error
 }
 
 public enum JSONValue: Codable, Hashable, Sendable {
@@ -231,12 +240,103 @@ public struct TableCell: Codable, Hashable, Sendable {
   }
 }
 
+public struct TableCellPosition: Codable, Hashable, Sendable {
+  public let row: Int
+  public let column: Int
+
+  public init(row: Int, column: Int) {
+    self.row = row
+    self.column = column
+  }
+}
+
+public enum TableNavigationDirection: String, Codable, CaseIterable, Hashable, Sendable {
+  case previous
+  case next
+  case up
+  case down
+  case left
+  case right
+}
+
 public struct TableContent: Codable, Hashable, Sendable {
   public var rows: [[TableCell]]
 
-  public init(rows: [[TableCell]] = []) { self.rows = rows }
+  public init(rows: [[TableCell]] = []) {
+    let width = rows.map(\.count).max() ?? 0
+    self.rows = rows.map { row in
+      row + Array(repeating: TableCell(), count: width - row.count)
+    }
+  }
+
+  public init(from decoder: Decoder) throws {
+    self.init(rows: try decoder.singleValueContainer().decode([[TableCell]].self))
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    try rows.encode(to: encoder)
+  }
 
   public var columnCount: Int { rows.map(\.count).max() ?? 0 }
+
+  public var isRectangular: Bool { rows.allSatisfy { $0.count == columnCount } }
+
+  public func cell(at position: TableCellPosition) -> TableCell? {
+    guard rows.indices.contains(position.row), rows[position.row].indices.contains(position.column)
+    else { return nil }
+    return rows[position.row][position.column]
+  }
+
+  public func cell(atRow row: Int, column: Int) -> TableCell? {
+    cell(at: TableCellPosition(row: row, column: column))
+  }
+
+  @discardableResult
+  public mutating func setCellText(at position: TableCellPosition, to text: String) -> Bool {
+    guard rows.indices.contains(position.row), rows[position.row].indices.contains(position.column)
+    else { return false }
+    rows[position.row][position.column].text = text
+    return true
+  }
+
+  @discardableResult
+  public mutating func editingCell(atRow row: Int, column: Int, text: String) -> Bool {
+    setCellText(at: TableCellPosition(row: row, column: column), to: text)
+  }
+
+  public func navigating(
+    from position: TableCellPosition,
+    direction: TableNavigationDirection
+  ) -> TableCellPosition? {
+    guard rows.indices.contains(position.row), position.column >= 0,
+      position.column < columnCount else { return nil }
+    switch direction {
+    case .left:
+      guard position.column > 0 else { return nil }
+      return TableCellPosition(row: position.row, column: position.column - 1)
+    case .right:
+      guard position.column + 1 < columnCount else { return nil }
+      return TableCellPosition(row: position.row, column: position.column + 1)
+    case .up:
+      guard position.row > 0 else { return nil }
+      return TableCellPosition(row: position.row - 1, column: position.column)
+    case .down:
+      guard position.row + 1 < rows.count else { return nil }
+      return TableCellPosition(row: position.row + 1, column: position.column)
+    case .previous:
+      if position.column > 0 {
+        return TableCellPosition(row: position.row, column: position.column - 1)
+      }
+      guard position.row > 0 else { return nil }
+      return TableCellPosition(row: position.row - 1, column: columnCount - 1)
+    case .next:
+      if position.column + 1 < columnCount {
+        return TableCellPosition(row: position.row, column: position.column + 1)
+      }
+      guard position.row + 1 < rows.count else { return nil }
+      return TableCellPosition(row: position.row + 1, column: 0)
+    }
+  }
 
   public mutating func insertRow(at index: Int? = nil) {
     let count = columnCount
@@ -251,6 +351,10 @@ public struct TableContent: Codable, Hashable, Sendable {
   }
 
   public mutating func insertColumn(at index: Int? = nil) {
+    if rows.isEmpty {
+      rows = [[TableCell()]]
+      return
+    }
     let insertion = min(max(index ?? columnCount, 0), columnCount)
     for rowIndex in rows.indices {
       rows[rowIndex].insert(TableCell(), at: min(insertion, rows[rowIndex].count))
@@ -474,7 +578,23 @@ public struct Block: Codable, Hashable, Sendable {
       let state = attributes["checked"] == "true" ? "Completed" : "Unchecked"
       return "\(state) task: \(text)"
     }
+    if type == .toggle {
+      return "\(isCollapsed ? "Collapsed" : "Expanded") toggle: \(text)"
+    }
+    if type == .callout {
+      return "\(calloutStyle?.rawValue.capitalized ?? CalloutStyle.info.rawValue.capitalized) callout: \(text)"
+    }
     return "\(type.accessibilityName): \(text)"
+  }
+
+  public var isCollapsed: Bool {
+    type == .toggle && attributes["collapsed"] == "true"
+  }
+
+  public var calloutStyle: CalloutStyle? {
+    guard type == .callout else { return nil }
+    return CalloutStyle(rawValue: attributes["calloutStyle"] ?? attributes["style"] ?? "")
+      ?? .info
   }
 }
 
@@ -551,15 +671,23 @@ public struct BlockDocument: Codable, Hashable, Sendable {
   ) throws -> Self {
     var attributes = attributes
     if type == .task { attributes["checked"] = attributes["checked"] ?? "false" }
+    if type == .toggle { attributes["collapsed"] = attributes["collapsed"] ?? "false" }
+    if type == .callout {
+      attributes["calloutStyle"] = attributes["calloutStyle"] ?? attributes["style"] ?? CalloutStyle.info.rawValue
+    }
+    let content: BlockContent? = type == .table
+      ? .table(TableContent(rows: [[TableCell()]]))
+      : nil
     return try inserting(
       Block(
         id: id,
         recordID: recordID,
         position: children(of: parentID).count,
-        text: type == .divider ? "" : text,
+        text: type == .divider || type == .table ? "" : text,
         parentID: parentID,
         type: type,
-        attributes: attributes),
+        attributes: attributes,
+        content: content),
       before: siblingID)
   }
 
@@ -571,6 +699,85 @@ public struct BlockDocument: Codable, Hashable, Sendable {
       throw BlockTreeError.missingParent(id)
     }
     copy.blocks[index].text = text
+    try copy.validate()
+    return copy
+  }
+
+  public func editingTableCell(
+    id: UUID,
+    row: Int,
+    column: Int,
+    text: String
+  ) throws -> Self {
+    guard let source = block(id: id), source.type == .table else {
+      throw BlockTreeError.invalidChild(id)
+    }
+    var table: TableContent
+    if case .table(let content)? = source.content {
+      table = content
+    } else {
+      table = TableContent(rows: [[TableCell()]])
+    }
+    guard table.setCellText(at: TableCellPosition(row: row, column: column), to: text) else {
+      throw BlockTreeError.invalidRange
+    }
+    return try replacingContent(.table(table), for: id)
+  }
+
+  public func settingTableCellText(
+    id: UUID,
+    row: Int,
+    column: Int,
+    text: String
+  ) throws -> Self {
+    try editingTableCell(id: id, row: row, column: column, text: text)
+  }
+
+  public func insertingTableRow(id: UUID, at index: Int? = nil) throws -> Self {
+    try updatingTable(id: id) { table in table.insertRow(at: index) }
+  }
+
+  public func removingTableRow(id: UUID, at index: Int) throws -> Self {
+    try updatingTable(id: id) { table in table.removeRow(at: index) }
+  }
+
+  public func insertingTableColumn(id: UUID, at index: Int? = nil) throws -> Self {
+    try updatingTable(id: id) { table in table.insertColumn(at: index) }
+  }
+
+  public func removingTableColumn(id: UUID, at index: Int) throws -> Self {
+    try updatingTable(id: id) { table in table.removeColumn(at: index) }
+  }
+
+  public func settingCollapsed(_ collapsed: Bool, for id: UUID) throws -> Self {
+    guard let source = block(id: id), source.type == .toggle else {
+      throw BlockTreeError.invalidChild(id)
+    }
+    var copy = self
+    guard let index = copy.blocks.firstIndex(where: { $0.id == id }) else {
+      throw BlockTreeError.missingParent(id)
+    }
+    copy.blocks[index].attributes["collapsed"] = collapsed ? "true" : "false"
+    try copy.validate()
+    return copy
+  }
+
+  public func togglingCollapse(id: UUID) throws -> Self {
+    guard let source = block(id: id), source.type == .toggle else {
+      throw BlockTreeError.invalidChild(id)
+    }
+    return try settingCollapsed(!source.isCollapsed, for: id)
+  }
+
+  public func settingCalloutStyle(_ style: CalloutStyle, for id: UUID) throws -> Self {
+    guard let source = block(id: id), source.type == .callout else {
+      throw BlockTreeError.invalidChild(id)
+    }
+    var copy = self
+    guard let index = copy.blocks.firstIndex(where: { $0.id == id }) else {
+      throw BlockTreeError.missingParent(id)
+    }
+    copy.blocks[index].attributes["calloutStyle"] = style.rawValue
     try copy.validate()
     return copy
   }
@@ -701,7 +908,20 @@ public struct BlockDocument: Codable, Hashable, Sendable {
     } else {
       copy.blocks[index].attributes.removeValue(forKey: "checked")
     }
+    if type == .toggle {
+      copy.blocks[index].attributes["collapsed"] = source.attributes["collapsed"] ?? "false"
+    } else {
+      copy.blocks[index].attributes.removeValue(forKey: "collapsed")
+    }
+    if type == .callout {
+      copy.blocks[index].attributes["calloutStyle"] = source.attributes["calloutStyle"]
+        ?? source.attributes["style"] ?? CalloutStyle.info.rawValue
+    }
     if type == .divider { copy.blocks[index].text = "" }
+    if type == .table {
+      if case .table? = copy.blocks[index].content { }
+      else { copy.blocks[index].content = .table(TableContent(rows: [[TableCell()]])) }
+    }
     return try copy.reindexed()
   }
 
@@ -824,6 +1044,33 @@ public struct BlockDocument: Codable, Hashable, Sendable {
       children(of: parentID).flatMap { block in [block] + visit(block.id) }
     }
     return [root] + visit(id)
+  }
+
+  private func replacingContent(_ content: BlockContent, for id: UUID) throws -> Self {
+    var copy = self
+    guard let index = copy.blocks.firstIndex(where: { $0.id == id }) else {
+      throw BlockTreeError.missingParent(id)
+    }
+    copy.blocks[index].content = content
+    try copy.validate()
+    return copy
+  }
+
+  private func updatingTable(
+    id: UUID,
+    _ update: (inout TableContent) -> Void
+  ) throws -> Self {
+    guard let source = block(id: id), source.type == .table else {
+      throw BlockTreeError.invalidChild(id)
+    }
+    var table: TableContent
+    if case .table(let content)? = source.content {
+      table = content
+    } else {
+      table = TableContent(rows: [[TableCell()]])
+    }
+    update(&table)
+    return try replacingContent(.table(table), for: id)
   }
 
   private static func orderKey(previous: Int64?, next: Int64?) -> Int64 {

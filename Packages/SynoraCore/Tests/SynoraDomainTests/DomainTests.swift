@@ -177,6 +177,63 @@ func structuredBlockContentRoundTripsAndTableEditsStayRectangular() throws {
 }
 
 @Test
+func advancedBlocksEditTablesAndKeepContainerRules() throws {
+  let recordID = UUID()
+  let tableID = UUID()
+  var table = TableContent(rows: [
+    [TableCell(text: "A"), TableCell(text: "B")],
+    [TableCell(text: "C")],
+  ])
+  #expect(table.isRectangular)
+  #expect(table.cell(atRow: 1, column: 1)?.text == "")
+  let edited = table.editingCell(atRow: 1, column: 1, text: "D")
+  #expect(edited)
+  #expect(table.navigating(from: TableCellPosition(row: 0, column: 1), direction: .next)
+    == TableCellPosition(row: 1, column: 0))
+  table.removeColumn(at: 1)
+  table.insertRow()
+  #expect(table.rows.count == 3)
+  #expect(table.columnCount == 1)
+
+  var document = try BlockDocument(recordID: recordID, blocks: [
+    Block(
+      id: tableID, recordID: recordID, position: 0, text: "", type: .table,
+      content: .table(table)),
+  ])
+  document = try document.editingTableCell(id: tableID, row: 0, column: 0, text: "edited")
+  #expect(document.block(id: tableID)?.content == .table(TableContent(rows: [
+    [TableCell(text: "edited")],
+    [TableCell(text: "C")],
+    [TableCell()],
+  ])))
+  document = try document.insertingTableColumn(id: tableID)
+  #expect((document.block(id: tableID)?.content).map { content in
+    if case .table(let table) = content { return table.isRectangular }
+    return false
+  } == true)
+
+  let toggleID = UUID()
+  let childID = UUID()
+  let calloutID = UUID()
+  let nested = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: toggleID, recordID: recordID, position: 1, text: "展开", type: .toggle),
+    Block(id: childID, recordID: recordID, position: 0, text: "内容", parentID: toggleID),
+    Block(id: calloutID, recordID: recordID, position: 2, text: "提醒", type: .callout),
+  ])
+  #expect(nested.block(id: toggleID)?.isCollapsed == false)
+  #expect(try nested.togglingCollapse(id: toggleID).block(id: toggleID)?.isCollapsed == true)
+  #expect(nested.block(id: calloutID)?.calloutStyle == .info)
+  #expect(try nested.settingCalloutStyle(.warning, for: calloutID)
+    .block(id: calloutID)?.calloutStyle == .warning)
+  #expect(throws: BlockTreeError.invalidChild(childID)) {
+    try BlockDocument(recordID: recordID, blocks: [
+      Block(id: tableID, recordID: recordID, position: 0, text: "", type: .table),
+      Block(id: childID, recordID: recordID, position: 0, text: "非法", parentID: tableID),
+    ])
+  }
+}
+
+@Test
 func basicBlockKindsCreateEditConvertAndExposeListState() throws {
   let recordID = UUID(uuidString: "00000000-0000-4000-8000-000000000030")!
   var document = try BlockDocument(recordID: recordID)
