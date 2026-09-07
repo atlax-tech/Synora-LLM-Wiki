@@ -392,3 +392,46 @@ func assetPlacementCommandsCommitAndUndoAsOneEdit() throws {
   _ = try session.undo()
   #expect(session.document.assetPlacements(in: blockID).map(\.assetID) == [assetID])
 }
+
+@Test
+func mediaCommandsGroupLayoutCaptionCropReorderReplaceAndLinkUndo() throws {
+  let recordID = UUID()
+  let blockID = UUID()
+  let firstID = UUID()
+  let secondID = UUID()
+  let replacementID = UUID()
+  let document = try BlockDocument(recordID: recordID).creatingMedia(
+    .gallery,
+    assetIDs: [firstID, secondID],
+    id: blockID)
+  var session = EditorSession(document: document)
+
+  _ = try session.setMediaLayout(.collage, in: blockID)
+  _ = try session.setAssetCaption("封面", for: firstID, in: blockID)
+  _ = try session.setAssetCrop(["x": 0.25, "width": 0.5], for: firstID, in: blockID)
+  _ = try session.reorderAsset(firstID, in: blockID)
+  _ = try session.replaceAsset(
+    secondID,
+    with: AssetPlacement(assetID: replacementID, caption: "新文件"),
+    in: blockID)
+  #expect(session.document.assetPlacements(in: blockID).map(\.assetID) == [replacementID, firstID])
+  #expect(session.document.block(id: blockID)?.mediaLayout == .collage)
+
+  _ = try session.undo()
+  #expect(session.document.assetPlacements(in: blockID).map(\.assetID) == [secondID, firstID])
+  _ = try session.undo()
+  _ = try session.undo()
+  _ = try session.undo()
+  _ = try session.undo()
+  #expect(session.document == document)
+
+  let linkID = UUID()
+  let linkDocument = try BlockDocument(recordID: recordID).creatingLink(
+    LinkCard(url: "https://example.com"), id: linkID)
+  session = EditorSession(document: linkDocument)
+  _ = try session.setLinkCard(LinkCard(url: "https://example.com", title: "Example"), in: linkID)
+  #expect(session.document.block(id: linkID)?.content == .link(
+    LinkCard(url: "https://example.com", title: "Example")))
+  _ = try session.undo()
+  #expect(session.document == linkDocument)
+}

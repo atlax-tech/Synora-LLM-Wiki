@@ -267,6 +267,12 @@ public enum EditorCommand: Hashable, Sendable {
   case toggleCollapse
   case setCalloutStyle(CalloutStyle)
   case setAssetPlacements([AssetPlacement])
+  case reorderAsset(UUID, before: UUID?)
+  case replaceAsset(UUID, with: AssetPlacement)
+  case setAssetCaption(UUID, String)
+  case setAssetCrop(UUID, [String: Double])
+  case setMediaLayout(MediaLayout)
+  case setLinkCard(LinkCard)
 }
 
 public enum EditorError: Error, Equatable, Sendable {
@@ -807,6 +813,18 @@ public struct EditorSession: Sendable {
       next = try document.settingCalloutStyle(style, for: blockID)
     case .setAssetPlacements(let placements):
       next = try document.settingAssetPlacements(placements, for: blockID)
+    case .reorderAsset(let assetID, let targetAssetID):
+      next = try document.reorderingAsset(assetID, in: blockID, before: targetAssetID)
+    case .replaceAsset(let assetID, let replacement):
+      next = try document.replacingAsset(assetID, with: replacement, in: blockID)
+    case .setAssetCaption(let assetID, let caption):
+      next = try document.settingAssetCaption(caption, for: assetID, in: blockID)
+    case .setAssetCrop(let assetID, let crop):
+      next = try document.settingAssetCrop(crop, for: assetID, in: blockID)
+    case .setMediaLayout(let layout):
+      next = try document.settingMediaLayout(layout, for: blockID)
+    case .setLinkCard(let card):
+      next = try document.settingLinkCard(card, for: blockID)
     }
     return commit(next, focus: focusAfter, collapsedFocus: collapsedFocusAfter)
   }
@@ -1046,6 +1064,58 @@ public struct EditorSession: Sendable {
   ) throws -> BlockDocument {
     let placements = try document.removingAsset(assetID, from: blockID).assetPlacements(in: blockID)
     return try execute(.setAssetPlacements(placements), blockID: blockID)
+  }
+
+  @discardableResult
+  public mutating func reorderAsset(
+    _ assetID: UUID,
+    in blockID: UUID,
+    before targetAssetID: UUID? = nil
+  ) throws -> BlockDocument {
+    try execute(.reorderAsset(assetID, before: targetAssetID), blockID: blockID)
+  }
+
+  @discardableResult
+  public mutating func replaceAsset(
+    _ assetID: UUID,
+    with replacement: AssetPlacement,
+    in blockID: UUID
+  ) throws -> BlockDocument {
+    try execute(.replaceAsset(assetID, with: replacement), blockID: blockID)
+  }
+
+  @discardableResult
+  public mutating func setAssetCaption(
+    _ caption: String,
+    for assetID: UUID,
+    in blockID: UUID
+  ) throws -> BlockDocument {
+    try execute(.setAssetCaption(assetID, caption), blockID: blockID)
+  }
+
+  @discardableResult
+  public mutating func setAssetCrop(
+    _ crop: [String: Double],
+    for assetID: UUID,
+    in blockID: UUID
+  ) throws -> BlockDocument {
+    try execute(.setAssetCrop(assetID, crop), blockID: blockID)
+  }
+
+  @discardableResult
+  public mutating func setMediaLayout(
+    _ layout: MediaLayout,
+    in blockID: UUID
+  ) throws -> BlockDocument {
+    try execute(.setMediaLayout(layout), blockID: blockID)
+  }
+
+  @discardableResult
+  public mutating func setLinkCard(
+    _ card: LinkCard,
+    in blockID: UUID
+  ) throws -> BlockDocument {
+    try execute(.setLinkCard(card), blockID: blockID)
   }
 
   @discardableResult

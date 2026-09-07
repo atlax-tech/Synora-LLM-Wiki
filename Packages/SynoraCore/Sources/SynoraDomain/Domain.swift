@@ -173,6 +173,14 @@ public enum BlockType: Codable, Hashable, Sendable {
     }
   }
 
+  public var mediaPlacementLimit: Int? {
+    switch self {
+    case .image, .video, .audio, .pdf, .file: 1
+    case .gallery: nil
+    default: 0
+    }
+  }
+
   public var accessibilityName: String {
     switch self {
     case .paragraph: "Paragraph"
@@ -403,6 +411,12 @@ public struct TableContent: Codable, Hashable, Sendable {
   }
 }
 
+public enum MediaLayout: String, Codable, CaseIterable, Hashable, Sendable {
+  case single
+  case collage
+  case gallery
+}
+
 public struct AssetPlacement: Codable, Hashable, Sendable {
   public let assetID: UUID
   public var order: Int
@@ -426,6 +440,17 @@ public struct LinkCard: Codable, Hashable, Sendable {
     self.url = url
     self.title = title
     self.summary = summary
+  }
+
+  public var isSupportedURL: Bool {
+    guard !url.contains(where: { $0.isWhitespace || $0.isNewline }),
+      let value = URL(string: url), let scheme = value.scheme?.lowercased()
+    else { return false }
+    switch scheme {
+    case "http", "https": return value.host != nil
+    case "mailto": return !value.path.isEmpty
+    default: return false
+    }
   }
 }
 
@@ -637,6 +662,14 @@ public struct Block: Codable, Hashable, Sendable {
       ?? .info
   }
 
+  public var mediaLayout: MediaLayout? {
+    guard type == .image || type == .gallery else { return nil }
+    if let value = attributes["mediaLayout"], let layout = MediaLayout(rawValue: value) {
+      return layout
+    }
+    return type == .image ? .single : .gallery
+  }
+
   public var inlineMarks: [InlineAttribute] {
     get { inlineAttributes }
     set { inlineAttributes = newValue }
@@ -694,7 +727,15 @@ public struct BlockDocument: Codable, Hashable, Sendable {
         throw BlockTreeError.invalidChild(block.id)
       case .assets? where !block.type.supportsAssetPlacements:
         throw BlockTreeError.invalidChild(block.id)
-      case .link? where block.type != .link:
+      case .assets(let placements)? where block.type.mediaPlacementLimit.map({ placements.count > $0 }) == true:
+        throw BlockTreeError.invalidChild(block.id)
+      case .assets(let placements)? where Set(placements.map(\.assetID)).count != placements.count:
+        throw BlockTreeError.invalidChild(block.id)
+      case .assets(let placements)? where !placements.allSatisfy({
+        $0.crop.values.allSatisfy { $0.isFinite && $0 >= 0 && $0 <= 1 }
+      }):
+        throw BlockTreeError.invalidChild(block.id)
+      case .link(let card)? where block.type != .link || !card.isSupportedURL:
         throw BlockTreeError.invalidChild(block.id)
       default:
         break
@@ -742,7 +783,7 @@ public struct BlockDocument: Codable, Hashable, Sendable {
     }
     let content: BlockContent? = type == .table
       ? .table(TableContent(rows: [[TableCell()]]))
-      : nil
+      : type.supportsAssetPlacements ? .assets([]) : nil
     return try inserting(
       Block(
         id: id,
@@ -813,6 +854,10 @@ public struct BlockDocument: Codable, Hashable, Sendable {
     return placements.sorted { ($0.order, $0.assetID.uuidString) < ($1.order, $1.assetID.uuidString) }
   }
 
+  public func assetPlacement(_ assetID: UUID, in id: UUID) -> AssetPlacement? {
+    assetPlacements(in: id).first { $0.assetID == assetID }
+  }
+
   public func settingAssetPlacements(
     _ placements: [AssetPlacement],
     for id: UUID
@@ -824,7 +869,16 @@ public struct BlockDocument: Codable, Hashable, Sendable {
     guard let index = copy.blocks.firstIndex(where: { $0.id == id }) else {
       throw BlockTreeError.missingParent(id)
     }
-    copy.blocks[index].content = .assets(placements)
+    guard Set(placements.map(\.assetID)).count == placements.count,
+      source.type.mediaPlacementLimit.map({ placements.count <= $0 }) ?? true
+    else { throw BlockTreeError.invalidChild(id) }
+    copy.blocks[index].content = .assets(placements.enumerated().map { offset, placement in
+      AssetPlacement(
+        assetID: placement.assetID,
+        order: offset,
+        caption: placement.caption,
+        crop: placement.crop)
+    })
     try copy.validate()
     return copy
   }
@@ -845,6 +899,156 @@ public struct BlockDocument: Codable, Hashable, Sendable {
       caption: placement.caption,
       crop: placement.crop))
     return try settingAssetPlacements(placements, for: id)
+  }
+
+  public func reorderingAsset(
+    _ assetID: UUID,
+    in id: UUID,
+    before targetAssetID: UUID? = nil
+  ) throws -> Self {
+    var placements = assetPlacements(in: id)
+    guard let source = placements.firstIndex(where: { $0.assetID == assetID }) else {
+      throw BlockTreeError.invalidChild(id)
+    }
+    let moved = placements.remove(at: source)
+    let insertion: Int
+    if let targetAssetID {
+      guard let target = placements.firstIndex(where: { $0.assetID == targetAssetID }) else {
+        throw BlockTreeError.invalidChild(id)
+      }
+      insertion = target
+    } else {
+      insertion = placements.count
+    }
+    placements.insert(moved, at: insertion)
+    return try settingAssetPlacements(placements, for: id)
+  }
+
+  public func replacingAsset(
+    _ assetID: UUID,
+    with replacement: AssetPlacement,
+    in id: UUID
+  ) throws -> Self {
+    var placements = assetPlacements(in: id)
+    guard let index = placements.firstIndex(where: { $0.assetID == assetID }),
+      assetID == replacement.assetID || !placements.contains(where: { $0.assetID == replacement.assetID })
+    else { throw BlockTreeError.invalidChild(id) }
+    placements[index] = AssetPlacement(
+      assetID: replacement.assetID,
+      order: placements[index].order,
+      caption: replacement.caption,
+      crop: replacement.crop)
+    return try settingAssetPlacements(placements, for: id)
+  }
+
+  public func settingAssetCaption(
+    _ caption: String,
+    for assetID: UUID,
+    in id: UUID
+  ) throws -> Self {
+    guard let placement = assetPlacement(assetID, in: id) else {
+      throw BlockTreeError.invalidChild(id)
+    }
+    return try replacingAsset(
+      assetID,
+      with: AssetPlacement(
+        assetID: assetID,
+        order: placement.order,
+        caption: caption,
+        crop: placement.crop),
+      in: id)
+  }
+
+  public func settingAssetCrop(
+    _ crop: [String: Double],
+    for assetID: UUID,
+    in id: UUID
+  ) throws -> Self {
+    guard crop.values.allSatisfy({ $0.isFinite && $0 >= 0 && $0 <= 1 }),
+      let placement = assetPlacement(assetID, in: id)
+    else { throw BlockTreeError.invalidChild(id) }
+    return try replacingAsset(
+      assetID,
+      with: AssetPlacement(
+        assetID: assetID,
+        order: placement.order,
+        caption: placement.caption,
+        crop: crop),
+      in: id)
+  }
+
+  public func settingMediaLayout(_ layout: MediaLayout, for id: UUID) throws -> Self {
+    guard let source = block(id: id), source.type == .image || source.type == .gallery else {
+      throw BlockTreeError.invalidChild(id)
+    }
+    guard source.type != .image || layout == .single else {
+      throw BlockTreeError.invalidChild(id)
+    }
+    guard source.type != .gallery || layout != .single else {
+      throw BlockTreeError.invalidChild(id)
+    }
+    var copy = self
+    guard let index = copy.blocks.firstIndex(where: { $0.id == id }) else {
+      throw BlockTreeError.missingParent(id)
+    }
+    copy.blocks[index].attributes["mediaLayout"] = layout.rawValue
+    try copy.validate()
+    return copy
+  }
+
+  public func creatingMedia(
+    _ type: BlockType,
+    assetIDs: [UUID] = [],
+    layout: MediaLayout? = nil,
+    before siblingID: UUID? = nil,
+    id: UUID = UUID(),
+    attributes: [String: String] = [:]
+  ) throws -> Self {
+    guard type.supportsAssetPlacements else { throw BlockTreeError.invalidChild(id) }
+    var attributes = attributes
+    let resolvedLayout = layout ?? (type == .image ? .single : .gallery)
+    if type == .image && resolvedLayout != .single { throw BlockTreeError.invalidChild(id) }
+    if type == .gallery && resolvedLayout == .single { throw BlockTreeError.invalidChild(id) }
+    attributes["mediaLayout"] = resolvedLayout.rawValue
+    let placements = assetIDs.enumerated().map { index, assetID in
+      AssetPlacement(assetID: assetID, order: index)
+    }
+    return try inserting(
+      Block(
+        id: id,
+        recordID: recordID,
+        position: children().count,
+        text: "",
+        type: type,
+        attributes: attributes,
+        content: .assets(placements)),
+      before: siblingID)
+  }
+
+  public func creatingLink(
+    _ card: LinkCard,
+    before siblingID: UUID? = nil,
+    id: UUID = UUID(),
+    attributes: [String: String] = [:]
+  ) throws -> Self {
+    guard card.isSupportedURL else { throw BlockTreeError.invalidChild(id) }
+    return try inserting(
+      Block(
+        id: id,
+        recordID: recordID,
+        position: children().count,
+        text: "",
+        type: .link,
+        attributes: attributes,
+        content: .link(card)),
+      before: siblingID)
+  }
+
+  public func settingLinkCard(_ card: LinkCard, for id: UUID) throws -> Self {
+    guard let source = block(id: id), source.type == .link, card.isSupportedURL else {
+      throw BlockTreeError.invalidChild(id)
+    }
+    return try replacingContent(.link(card), for: id)
   }
 
   public func removingAsset(
@@ -1086,6 +1290,22 @@ public struct BlockDocument: Codable, Hashable, Sendable {
     if type == .table {
       if case .table? = copy.blocks[index].content { }
       else { copy.blocks[index].content = .table(TableContent(rows: [[TableCell()]])) }
+    }
+    if type.supportsAssetPlacements {
+      if case .assets? = copy.blocks[index].content { }
+      else { copy.blocks[index].content = .assets([]) }
+      if type == .image {
+        copy.blocks[index].attributes["mediaLayout"] = MediaLayout.single.rawValue
+      } else if type == .gallery {
+        copy.blocks[index].attributes["mediaLayout"] =
+          source.attributes["mediaLayout"] ?? MediaLayout.gallery.rawValue
+      }
+    } else if case .assets? = copy.blocks[index].content {
+      copy.blocks[index].content = nil
+      copy.blocks[index].attributes.removeValue(forKey: "mediaLayout")
+    }
+    if type != .link, case .link? = copy.blocks[index].content {
+      copy.blocks[index].content = nil
     }
     return try copy.reindexed()
   }
