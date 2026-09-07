@@ -185,3 +185,20 @@ func productStoreTemplatesCopyTreeIDsAndRefuseSilentReplacement() throws {
     try store.applyTemplate(template, to: recordID, expectedRevision: 3)
   }
 }
+
+@Test
+func productStorePersistsAssetMetadataAlongsideTheDocumentStore() throws {
+  let path = FileManager.default.temporaryDirectory
+    .appendingPathComponent("synora-product-\(UUID().uuidString)", isDirectory: true)
+    .appendingPathComponent("library.sqlite").path
+  defer { try? FileManager.default.removeItem(atPath: path) }
+  let store = try ProductStore(path: path)
+  let asset = Asset(
+    id: UUID(), contentHash: "abc123", byteCount: 42,
+    mediaType: "public.png", originalFilename: "photo.png")
+  try store.saveAsset(asset)
+  #expect(try store.asset(id: asset.id) == asset)
+  #expect(try store.assets() == [asset])
+  let reopened = try ProductStore(path: path)
+  #expect(try reopened.asset(id: asset.id) == asset)
+}

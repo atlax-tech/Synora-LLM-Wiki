@@ -117,6 +117,13 @@ public final class ProductStore: @unchecked Sendable {
           kind TEXT NOT NULL,
           payload BLOB NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS assets (
+          id TEXT PRIMARY KEY NOT NULL,
+          content_hash TEXT NOT NULL,
+          byte_count INTEGER NOT NULL,
+          media_type TEXT,
+          original_filename TEXT
+        );
         PRAGMA journal_mode = WAL;
         """)
     }
@@ -126,6 +133,17 @@ public final class ProductStore: @unchecked Sendable {
           id TEXT PRIMARY KEY NOT NULL,
           kind TEXT NOT NULL,
           payload BLOB NOT NULL
+        );
+        """)
+    }
+    migrator.registerMigration("p2-assets-v1") { db in
+      try db.execute(sql: """
+        CREATE TABLE IF NOT EXISTS assets (
+          id TEXT PRIMARY KEY NOT NULL,
+          content_hash TEXT NOT NULL,
+          byte_count INTEGER NOT NULL,
+          media_type TEXT,
+          original_filename TEXT
         );
         """)
     }
@@ -157,6 +175,39 @@ public final class ProductStore: @unchecked Sendable {
 
   public func document(recordID: UUID) throws -> BlockDocument {
     try pool.read { db in try Self.loadDocument(db, recordID: recordID) }
+  }
+
+  public func saveAsset(_ asset: Asset) throws {
+    try pool.write { db in
+      try db.execute(
+        sql: "INSERT INTO assets (id, content_hash, byte_count, media_type, original_filename) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET content_hash = excluded.content_hash, byte_count = excluded.byte_count, media_type = excluded.media_type, original_filename = excluded.original_filename",
+        arguments: [asset.id.uuidString, asset.contentHash, asset.byteCount, asset.mediaType, asset.originalFilename])
+    }
+  }
+
+  public func asset(id: UUID) throws -> Asset? {
+    try pool.read { db in
+      guard let row = try Row.fetchOne(db, sql: "SELECT id, content_hash, byte_count, media_type, original_filename FROM assets WHERE id = ?", arguments: [id.uuidString]),
+        let idText: String = row["id"], let storedID = UUID(uuidString: idText),
+        let hash: String = row["content_hash"], let count: Int64 = row["byte_count"]
+      else { return nil }
+      return Asset(
+        id: storedID,
+        contentHash: hash,
+        byteCount: count,
+        mediaType: row["media_type"],
+        originalFilename: row["original_filename"])
+    }
+  }
+
+  public func assets() throws -> [Asset] {
+    try pool.read { db in
+      try Row.fetchAll(db, sql: "SELECT id, content_hash, byte_count, media_type, original_filename FROM assets ORDER BY id").compactMap { row in
+        guard let idText: String = row["id"], let id = UUID(uuidString: idText),
+          let hash: String = row["content_hash"], let count: Int64 = row["byte_count"] else { return nil }
+        return Asset(id: id, contentHash: hash, byteCount: count, mediaType: row["media_type"], originalFilename: row["original_filename"])
+      }
+    }
   }
 
   public func saveTemplate(_ template: RecordTemplate) throws {
