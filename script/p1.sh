@@ -4,9 +4,14 @@ set -euo pipefail
 root_dir="${0:A:h}/.."
 mode="${1:-}"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-artifact_dir="${SYNORA_ARTIFACT_DIR:-${TMPDIR:-/private/tmp}/synora-wiki-p1-$run_id}"
-derived_data="${SYNORA_DERIVED_DATA:-${TMPDIR:-/private/tmp}/synora-p2-active-cache/xcode}"
+artifact_dir="${SYNORA_ARTIFACT_DIR:-/private/tmp/synora-wiki-p1-$run_id}"
+derived_data="${SYNORA_DERIVED_DATA:-/private/tmp/synora-p2-active-cache/xcode}"
+cache_root="${SYNORA_P2_CACHE_ROOT:-/private/tmp/synora-p2-active-cache}"
+clang_cache="${CLANG_MODULE_CACHE_PATH:-$cache_root/clang-module-cache}"
+swift_cache="${SWIFT_MODULECACHE_PATH:-$cache_root/swift-module-cache}"
+source_packages="${SYNORA_CLONED_SOURCE_PACKAGES:-$derived_data/SourcePackages}"
 mkdir -p "$artifact_dir"
+mkdir -p "$derived_data" "$clang_cache" "$swift_cache" "$source_packages"
 
 if [[ "$mode" != unit && "$mode" != ui && "$mode" != visual && "$mode" != stage ]]; then
   print -u2 "usage: $0 {unit|ui|visual|stage}"
@@ -16,12 +21,15 @@ fi
 xcode_test() {
   local test_filter="$1"
   shift
-  xcodebuild -jobs 2 \
+  CLANG_MODULE_CACHE_PATH="$clang_cache" \
+    SWIFT_MODULECACHE_PATH="$swift_cache" \
+    xcodebuild -jobs 2 \
     -project "$root_dir/SynoraWiki.xcodeproj" \
     -scheme SynoraWiki \
     -configuration Debug \
     -destination 'platform=macOS,arch=arm64' \
     -derivedDataPath "$derived_data" \
+    -clonedSourcePackagesDirPath "$source_packages" \
     "-only-testing:$test_filter" \
     test \
     "$@"

@@ -4,10 +4,11 @@ set -euo pipefail
 root_dir="${0:A:h}/.."
 mode="${1:-}"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-artifact_dir="${SYNORA_ARTIFACT_DIR:-${TMPDIR:-/private/tmp}/synora-wiki-p2-$run_id}"
-cache_root="${TMPDIR:-/private/tmp}/synora-p2-active-cache"
+artifact_dir="${SYNORA_ARTIFACT_DIR:-/private/tmp/synora-wiki-p2-$run_id}"
+cache_root="${SYNORA_P2_CACHE_ROOT:-/private/tmp/synora-p2-active-cache}"
 scratch_dir="${SYNORA_P2_SCRATCH_DIR:-$cache_root/swiftpm}"
 export SYNORA_DERIVED_DATA="${SYNORA_DERIVED_DATA:-$cache_root/xcode}"
+export SYNORA_P2_CACHE_ROOT="$cache_root"
 clang_cache="$cache_root/clang-module-cache"
 swift_cache="$cache_root/swift-module-cache"
 # Own one heavy job and its children; stage remains a read-only aggregation.
