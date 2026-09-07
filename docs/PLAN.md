@@ -2,7 +2,7 @@
 
 适用范围以 [PRODUCT §5.3](PRODUCT.md#53-当前服务与交付边界) 为准；DEFERRED 项不进入任何已规划阶段的依赖、完成率或退出门槛，不记为 BLOCKED，不要求 Apple 开发者账号。
 
-状态：P0 `PASS`；P1 `IN_PROGRESS`；P2–P9 `NOT_STARTED`。P0 工程探针已在 `ce4a71c` 收口；当前证据、系统级 UI 限制和后续 hand-off 见 [P0 traceability](p0/traceability.md)。P1 已按启动提案进入执行，阶段内采用 macOS 26 系统 Liquid Glass 功能层与原生 Material 内容层分离策略。
+状态：P0 `PASS`；P1 `PASS`；P2–P9 `NOT_STARTED`。P0 工程探针已在 `ce4a71c` 收口；当前证据、系统级 UI 限制和后续 hand-off 见 [P0 traceability](p0/traceability.md)。P1 已在 `de2b76f`、`173f43a` 完成原生壳层、交互、视觉回归与阶段验证，收口证据见 [2026-09-06 P1 日志](development-log/2026-09-06-p1.md)。阶段内采用 macOS 26 系统 Liquid Glass 功能层与原生 Material 内容层分离策略。
 
 本文件只定义任务与依赖。阶段目标见 [SPEC.md](SPEC.md)，流程见 [DEVELOPMENT.md](DEVELOPMENT.md)，测试见 [TESTING.md](TESTING.md)，验收见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 
@@ -28,6 +28,8 @@
 测试方法见 [TESTING.md](TESTING.md)，退出门槛见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 
 ## P1 — 原生壳层与设计系统
+
+P1-01…P1-10 已完成。`script/p1.sh stage` 在 macOS 26 arm64 上通过 16 个产品单测、6 个 UI 测试及 light/dark 三尺寸视觉回归；大尺寸窗口在当前显示器上高度由 1117 pt 限制为 1050 pt，已由报告标记为 `CLAMPED_ENVIRONMENT`，不放宽其他几何或 SSIM 门槛。详见 [P1 收口日志](development-log/2026-09-06-p1.md) 与 [设计证据](design-qa.md)。
 
 ### 任务拆分
 

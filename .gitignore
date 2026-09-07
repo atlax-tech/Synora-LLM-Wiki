@@ -9,3 +9,6 @@ node_modules/
 *.trace
 __pycache__/
 *.pyc
+.vscode/
+**/xcuserdata/
+/App/Resources/Fixtures/logo/

@@ -1,6 +1,25 @@
 # 设计证据状态
 
-状态：原生 NOT_RUN；历史原型 QA 未复验。
+状态：原生 P1 `PASS`（自动视觉回归已运行；大尺寸宿主显示器限制已保留）；历史原型 QA 未复验。
+
+## P1 原生收口证据
+
+验证提交：`de2b76f`、`173f43a`；系统：macOS 26、arm64；截图为未缩放窗口 PNG，backing scale `2.0x`。`script/p1.sh stage` 的 light/dark 报告位于 `/private/tmp/synora-wiki-p1-stage-final/visual-report-light.json` 和 `/private/tmp/synora-wiki-p1-stage-final/visual-report-dark.json`。
+
+| 主题 | 尺寸 | contentLayoutRect（pt） | 窗口 frame（pt） | PNG（px） | SSIM | 几何状态 |
+|---|---|---:|---:|---:|---:|---|
+| light | compact | 1280 × 668 | 1280 × 720 | 2560 × 1440 | 0.999986 | MATCH |
+| light | default | 1440 × 848 | 1440 × 900 | 2880 × 1800 | 0.999724 | MATCH |
+| light | large | 1728 × 998 | 1728 × 1050 | 3456 × 2100 | 0.999808 | CLAMPED_ENVIRONMENT |
+| dark | compact | 1280 × 668 | 1280 × 720 | 2560 × 1440 | 1.000000 | MATCH |
+| dark | default | 1440 × 848 | 1440 × 900 | 2880 × 1800 | 0.999629 | MATCH |
+| dark | large | 1728 × 998 | 1728 × 1050 | 3456 × 2100 | 0.999744 | CLAMPED_ENVIRONMENT |
+
+基线文件固定在 [`Tests/VisualBaselines/P1`](../Tests/VisualBaselines/P1)。六项均高于 `DESIGN.md` 的 0.95 SSIM 门槛；大尺寸请求为 1728 × 1117 pt，当前宿主显示器只提供 1050 pt 可见高度，因此只记录 67 pt 高度限制，未把它报告成 MATCH，也未放宽宽度、内容区或 SSIM 检查。
+
+首次建立基线时对照了本机不随 Git 分发的高保真参考 `local-reference/high-fidelity/prototype/screenshots/Synora-Wiki-HiFi-Prototype-1280x720.png` 与 `local-reference/high-fidelity/Codex 图像 2026年9月5日 01_04_23.png`：原生 P1 保留侧栏、记录列表、正文编辑区、工具栏和可选检查器的信息层级；参考中的地图、天气、媒体卡片和 AI 结果属于后续 P7/P4 能力，未作为 P1 空壳的像素内容要求。由于参考与原生截图的 viewport、内容和系统 chrome 不同，不对两者直接计算 SSIM。
+
+键盘路径、原生控件 accessibility identifier/label、状态目录和检查器切换由 `SynoraWikiUITests` 6/6 覆盖；真实 VoiceOver 旁白、多显示器移动和发布级可访问性仍未在本机运行，继续由 P9 的系统级验收承接，不宣称已完成。
 
 | 已确认事实 | 证据 | 影响 |
 |---|---|---|

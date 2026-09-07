@@ -3,8 +3,8 @@
 适用范围以 [PRODUCT §5.3](PRODUCT.md#53-当前服务与交付边界) 为准；DEFERRED 项不进入任何已规划阶段的依赖、完成率或退出门槛，不记为 BLOCKED，不要求 Apple 开发者账号。
 
 文档版本：1.0
-状态：CONFIRMED（规划基线）；P0 `PASS`，P1 `IN_PROGRESS`，P2–P9 `NOT_STARTED`。
-阶段状态：P0 工程探针已在 `ce4a71c` 收口。SwiftPM、格式、应用/探针构建和 focused probe 证据已记录；probe UI 的 accessibility 环境阻塞已重试并如实保留，不前移为产品代码 blocker。P1 已获启动提案批准并进入实现。
+状态：CONFIRMED（规划基线）；P0 `PASS`，P1 `PASS`，P2–P9 `NOT_STARTED`。
+阶段状态：P0 工程探针已在 `ce4a71c` 收口。SwiftPM、格式、应用/探针构建和 focused probe 证据已记录；probe UI 的 accessibility 环境阻塞已重试并如实保留，不前移为产品代码 blocker。P1 已在 `de2b76f`、`173f43a` 完成实现和阶段验证，收口证据见 [P1 开发日志](development-log/2026-09-06-p1.md)。
 解释：阶段只分配实现和验证时机，不删减产品能力。实现阶段交付可运行增量；探针阶段只需用最小代表性证据回答预定技术问题。不允许用不可用占位控件提前宣称功能完成。
 
 ## 1. 阶段原则
@@ -84,7 +84,7 @@ P0 已按 [ACCEPTANCE.md](ACCEPTANCE.md) 的轻量化边界收口：最小代表
 
 ### 退出门槛
 
-见 [ACCEPTANCE.md](ACCEPTANCE.md) 对应阶段；不得越过未通过的门槛。
+P1 已满足 [ACCEPTANCE.md](ACCEPTANCE.md) 对应阶段门槛。三尺寸原生截图、键盘交互、状态组件、检查器切换与视觉回归均有运行证据；当前显示器不足以容纳 1117 pt 高度的窗口，阶段报告保留 `CLAMPED_ENVIRONMENT` 限制，不将其伪装为几何匹配。后续真实 VoiceOver、多显示器恢复和发布级验证仍由 P9/对应阶段承担。
 
 ## 5. P2 — 完整编辑与多媒体
 

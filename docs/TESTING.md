@@ -134,6 +134,8 @@ U-008～010 使用固定语料、规则和预先登记的质量/性能/成本门
 
 固定系统版本、字体、语言、测试内容、窗口 contentLayoutRect（pt）与 backing scale；保存未缩放 PNG 像素尺寸和截图范围。不得按文件名推定 viewport；不同缩放/区域截图不能直接算 SSIM。排除系统窗口阴影、动态内容和照片后，比较相同内容区域；数值阈值见 DESIGN。任何裁切、焦点丢失、内容不可达仍直接失败。原生基线必须在 P1 实测建立。
 
+P1 的 `script/p1.sh stage` 使用 `Tests/VisualBaselines/P1` 的 light/dark 三尺寸原生基线，并以 0.95 作为 SSIM 门槛。若 `large` 的窗口宽度匹配而高度仅因宿主显示器可见区域不足被限制，报告标记为 `CLAMPED_ENVIRONMENT` 并记录请求/实测值；其他尺寸、宽度、内容区和 SSIM 失败仍直接失败。
+
 ## AI 真实验收
 
 P4 在授权测试库与已配置模型上完成真实流式响应、提案审阅、持久提交和撤销；P5 以同一真实 runtime 验收 ingest/query/lint 与引用。缺少适用的 Mac 设备、BYOK 供应商配置或模型能力时记录该项 BLOCKED/未验证（不包括付费 Apple 账号及 DEFERRED 能力），不得用 fixture 宣称通过。Provider capability 差异保留矩阵与实际限制，不声称每个 provider 都支持全部模态。
