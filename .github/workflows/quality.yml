@@ -24,5 +24,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: synora-wiki-quality
-          path: ${{ runner.temp }}/synora-wiki-quality
+          path: |
+            ${{ runner.temp }}/synora-wiki-quality/*.txt
+            ${{ runner.temp }}/synora-wiki-quality/*.log
+            ${{ runner.temp }}/synora-wiki-quality/*.plist
+            ${{ runner.temp }}/synora-wiki-quality/*.xcresult
           if-no-files-found: warn
