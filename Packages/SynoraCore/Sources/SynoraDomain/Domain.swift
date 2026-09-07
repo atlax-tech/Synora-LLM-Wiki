@@ -178,6 +178,83 @@ public enum JSONValue: Codable, Hashable, Sendable {
   }
 }
 
+public struct TableCell: Codable, Hashable, Sendable {
+  public var text: String
+  public var attributes: [String: String]
+
+  public init(text: String = "", attributes: [String: String] = [:]) {
+    self.text = text
+    self.attributes = attributes
+  }
+}
+
+public struct TableContent: Codable, Hashable, Sendable {
+  public var rows: [[TableCell]]
+
+  public init(rows: [[TableCell]] = []) { self.rows = rows }
+
+  public var columnCount: Int { rows.map(\.count).max() ?? 0 }
+
+  public mutating func insertRow(at index: Int? = nil) {
+    let count = columnCount
+    let row = Array(repeating: TableCell(), count: count)
+    let insertion = min(max(index ?? rows.count, 0), rows.count)
+    rows.insert(row, at: insertion)
+  }
+
+  public mutating func removeRow(at index: Int) {
+    guard rows.indices.contains(index) else { return }
+    rows.remove(at: index)
+  }
+
+  public mutating func insertColumn(at index: Int? = nil) {
+    let insertion = min(max(index ?? columnCount, 0), columnCount)
+    for rowIndex in rows.indices {
+      rows[rowIndex].insert(TableCell(), at: min(insertion, rows[rowIndex].count))
+    }
+  }
+
+  public mutating func removeColumn(at index: Int) {
+    guard index >= 0 else { return }
+    for rowIndex in rows.indices where rows[rowIndex].indices.contains(index) {
+      rows[rowIndex].remove(at: index)
+    }
+  }
+}
+
+public struct AssetPlacement: Codable, Hashable, Sendable {
+  public let assetID: UUID
+  public var order: Int
+  public var caption: String
+  public var crop: [String: Double]
+
+  public init(assetID: UUID, order: Int = 0, caption: String = "", crop: [String: Double] = [:]) {
+    self.assetID = assetID
+    self.order = order
+    self.caption = caption
+    self.crop = crop
+  }
+}
+
+public struct LinkCard: Codable, Hashable, Sendable {
+  public let url: String
+  public var title: String?
+  public var summary: String?
+
+  public init(url: String, title: String? = nil, summary: String? = nil) {
+    self.url = url
+    self.title = title
+    self.summary = summary
+  }
+}
+
+public enum BlockContent: Codable, Hashable, Sendable {
+  case table(TableContent)
+  case assets([AssetPlacement])
+  case link(LinkCard)
+  case raw(JSONValue)
+}
+
 public struct Record: Codable, Hashable, Sendable {
   public let id: UUID
   public var title: String
@@ -237,7 +314,34 @@ public struct Block: Codable, Hashable, Sendable {
   public var text: String
   public var attributes: [String: String]
   public var unknownFields: [String: JSONValue]
+  public var content: BlockContent?
   public var revision: Int
+
+  public init(
+    id: UUID,
+    recordID: UUID,
+    position: Int,
+    text: String,
+    revision: Int = 0,
+    parentID: UUID? = nil,
+    type: BlockType = .paragraph,
+    orderKey: Int64? = nil,
+    attributes: [String: String] = [:],
+    unknownFields: [String: JSONValue] = [:],
+    content: BlockContent? = nil
+  ) {
+    self.id = id
+    self.recordID = recordID
+    self.parentID = parentID
+    self.type = type
+    self.orderKey = orderKey ?? Int64(position) * 1024
+    self.position = position
+    self.text = text
+    self.attributes = attributes
+    self.unknownFields = unknownFields
+    self.content = content
+    self.revision = revision
+  }
 
   public init(
     id: UUID,
@@ -251,16 +355,19 @@ public struct Block: Codable, Hashable, Sendable {
     attributes: [String: String] = [:],
     unknownFields: [String: JSONValue] = [:]
   ) {
-    self.id = id
-    self.recordID = recordID
-    self.parentID = parentID
-    self.type = type
-    self.orderKey = orderKey ?? Int64(position) * 1024
-    self.position = position
-    self.text = text
-    self.attributes = attributes
-    self.unknownFields = unknownFields
-    self.revision = revision
+    self.init(
+      id: id,
+      recordID: recordID,
+      position: position,
+      text: text,
+      revision: revision,
+      parentID: parentID,
+      type: type,
+      orderKey: orderKey,
+      attributes: attributes,
+      unknownFields: unknownFields,
+      content: nil
+    )
   }
 
   public init(id: UUID, recordID: UUID, position: Int, text: String, revision: Int) {
@@ -270,7 +377,7 @@ public struct Block: Codable, Hashable, Sendable {
   }
 
   private enum CodingKeys: String, CodingKey {
-    case id, recordID, parentID, type, orderKey, position, text, attributes, unknownFields, revision
+    case id, recordID, parentID, type, orderKey, position, text, attributes, unknownFields, content, revision
   }
 
   public init(from decoder: Decoder) throws {
@@ -286,7 +393,8 @@ public struct Block: Codable, Hashable, Sendable {
       type: try container.decodeIfPresent(BlockType.self, forKey: .type) ?? .paragraph,
       orderKey: try container.decodeIfPresent(Int64.self, forKey: .orderKey) ?? Int64(position) * 1024,
       attributes: try container.decodeIfPresent([String: String].self, forKey: .attributes) ?? [:],
-      unknownFields: try container.decodeIfPresent([String: JSONValue].self, forKey: .unknownFields) ?? [:]
+      unknownFields: try container.decodeIfPresent([String: JSONValue].self, forKey: .unknownFields) ?? [:],
+      content: try container.decodeIfPresent(BlockContent.self, forKey: .content)
     )
   }
 }
@@ -506,11 +614,25 @@ public struct Asset: Codable, Hashable, Sendable {
   public let id: UUID
   public let contentHash: String
   public let byteCount: Int64
+  public let mediaType: String?
+  public let originalFilename: String?
 
-  public init(id: UUID, contentHash: String, byteCount: Int64) {
+  public init(
+    id: UUID,
+    contentHash: String,
+    byteCount: Int64,
+    mediaType: String? = nil,
+    originalFilename: String? = nil
+  ) {
     self.id = id
     self.contentHash = contentHash
     self.byteCount = byteCount
+    self.mediaType = mediaType
+    self.originalFilename = originalFilename
+  }
+
+  public init(id: UUID, contentHash: String, byteCount: Int64) {
+    self.init(id: id, contentHash: contentHash, byteCount: byteCount, mediaType: nil, originalFilename: nil)
   }
 }
 

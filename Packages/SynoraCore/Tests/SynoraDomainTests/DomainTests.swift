@@ -151,3 +151,27 @@ func blockDocumentIndentOutdentAndTaskToggleUseTreeRules() throws {
   #expect(task.block(id: childID)?.attributes["checked"] == "false")
   #expect(try task.togglingTask(id: childID).block(id: childID)?.attributes["checked"] == "true")
 }
+
+@Test
+func structuredBlockContentRoundTripsAndTableEditsStayRectangular() throws {
+  let recordID = UUID()
+  let blockID = UUID()
+  let assetID = UUID()
+  var table = TableContent(rows: [[TableCell(text: "A")]])
+  table.insertColumn()
+  table.insertRow()
+  #expect(table.rows.count == 2)
+  #expect(table.columnCount == 2)
+  let document = try BlockDocument(recordID: recordID, blocks: [
+    Block(
+      id: blockID, recordID: recordID, position: 0, text: "",
+      type: .table,
+      content: .table(table)),
+    Block(
+      id: UUID(), recordID: recordID, position: 1, text: "photo",
+      type: .image,
+      content: .assets([AssetPlacement(assetID: assetID, caption: "说明")]))
+  ])
+  let decoded = try JSONDecoder().decode(BlockDocument.self, from: JSONEncoder().encode(document))
+  #expect(decoded == document)
+}
