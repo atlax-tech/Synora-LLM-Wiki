@@ -223,6 +223,52 @@ final class SynoraWikiUITests: XCTestCase {
     )
   }
 
+  func testEditorWorkflowExposesActionsAndEditsBody() {
+    let application = launchFixture()
+    defer { application.terminate() }
+    application.activate()
+
+    let allNotes = application.descendants(matching: .any)["sidebar-allNotes"]
+    XCTAssertTrue(allNotes.waitForExistence(timeout: 5))
+    allNotes.click()
+    let secondNote = application.descendants(matching: .any)[secondNoteID]
+    XCTAssertTrue(secondNote.waitForExistence(timeout: 5))
+    secondNote.click()
+
+    let title = application.textFields["editor-title"]
+    let body = application.textViews["editor-body"]
+    XCTAssertTrue(title.waitForExistence(timeout: 5))
+    XCTAssertTrue(body.waitForExistence(timeout: 5))
+    for identifier in [
+      "editor-block-menu", "editor-format-menu", "editor-undo", "editor-redo",
+      "editor-find", "editor-export-menu",
+    ] {
+      XCTAssertTrue(
+        application.descendants(matching: .any)[identifier].waitForExistence(timeout: 5),
+        "missing editor action \(identifier)"
+      )
+    }
+
+    application.descendants(matching: .any)["editor-find"].click()
+    let findQuery = application.descendants(matching: .textField)["editor-find-query"]
+    let replaceQuery = application.descendants(matching: .textField)["editor-replace-query"]
+    XCTAssertTrue(findQuery.waitForExistence(timeout: 5))
+    XCTAssertTrue(replaceQuery.waitForExistence(timeout: 5))
+    findQuery.click()
+    findQuery.typeText("Keep")
+    replaceQuery.click()
+    replaceQuery.typeText("Local-ready")
+    findQuery.click()
+    application.buttons["Replace All"].click()
+    XCTAssertTrue(waitForValue("Local-ready", in: application))
+
+    application.buttons["Close"].click()
+    let updatedBody = application.textViews["editor-body"]
+    XCTAssertTrue(updatedBody.waitForExistence(timeout: 5))
+    updatedBody.click()
+    application.typeText(" edited")
+  }
+
   func testThemeToggleChangesOnlyThisSession() {
     let application = launchFixture(contentSize: "1440x900", theme: "light")
     defer { application.terminate() }
@@ -284,6 +330,16 @@ final class SynoraWikiUITests: XCTestCase {
     return toolbarButtons.first {
       ["Search", "搜索"].contains($0.label)
     } ?? application.toolbars.firstMatch.buttons.element(boundBy: 1)
+  }
+
+  private func waitForValue(_ expected: String, in application: XCUIApplication) -> Bool {
+    let deadline = Date().addingTimeInterval(5)
+    repeat {
+      let value = application.textViews["editor-body"].value
+      if String(describing: value).contains(expected) { return true }
+      RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+    } while Date() < deadline
+    return false
   }
 
   private func launch(_ application: XCUIApplication, contentSize: VisualSize, theme: String) {

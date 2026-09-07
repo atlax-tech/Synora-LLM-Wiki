@@ -1807,13 +1807,20 @@ public final class SynoraTextView: NSView, NSTextViewDelegate {
       }
     }
     textView.onPaint = { [weak self] in self?.endPaintSignpost() }
+    textView.setAccessibilityRole(.textArea)
     textView.setAccessibilityLabel("Record body")
     textView.setAccessibilityIdentifier("editor-body")
     textView.setAccessibilityHelp("Edit the selected record")
     addSubview(textView)
-    setAccessibilityLabel("Record body")
-    setAccessibilityIdentifier("editor-body")
-    setAccessibilityHelp("Edit the selected record")
+    setAccessibilityRole(.group)
+    setAccessibilityIdentifier("editor-body-container")
+  }
+
+  public override var acceptsFirstResponder: Bool { true }
+
+  public override func mouseDown(with event: NSEvent) {
+    window?.makeFirstResponder(textView)
+    super.mouseDown(with: event)
   }
 
   private func emitTextChange() {
