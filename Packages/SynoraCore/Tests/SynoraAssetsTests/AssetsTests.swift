@@ -2,6 +2,7 @@ import Foundation
 import CoreGraphics
 import ImageIO
 import Testing
+import SynoraDomain
 import UniformTypeIdentifiers
 
 @testable import SynoraAssets
@@ -126,4 +127,67 @@ func assetStoreRejectsMissingDirectoriesAndCachesImagePreview() async throws {
   #expect(preview.pixelHeight == 3)
   #expect(preview.thumbnailURL.map { FileManager.default.fileExists(atPath: $0.path) } == true)
   #expect(store.preview(for: asset) == preview)
+}
+
+@Test
+func mediaCoordinatorCarriesBlockRevisionAndBoundsPrefetch() async throws {
+  let root = FileManager.default.temporaryDirectory
+    .appendingPathComponent("synora-media-" + UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: root) }
+  let source = root.appendingPathComponent("readme.txt")
+  try Data("preview".utf8).write(to: source)
+  let store = try AssetStore(rootURL: root.appendingPathComponent("assets"))
+  let asset = try await store.importFile(at: source)
+  let coordinator = MediaPreviewCoordinator(store: store, prefetchLimit: 2)
+  let visible = MediaPreviewRequest(blockID: UUID(), blockRevision: 7, asset: asset)
+  let missing = Asset(
+    id: UUID(), contentHash: String(repeating: "f", count: 64), byteCount: 1,
+    mediaType: UTType.plainText.identifier)
+  let prefetch = (0..<4).map { _ in
+    MediaPreviewRequest(blockID: UUID(), blockRevision: 1, asset: missing)
+  }
+  let results = await coordinator.load(visible: [visible], prefetch: prefetch)
+  #expect(results.count == 3)
+  #expect(results.first?.blockID == visible.blockID)
+  #expect(results.first?.blockRevision == 7)
+  #expect(results.first?.assetID == asset.id)
+  if case .ready(let preview) = results.first?.state {
+    #expect(preview.kind == .file)
+  } else {
+    Issue.record("visible file did not produce a usable preview state")
+  }
+  #expect(results.dropFirst().allSatisfy {
+    if case .failed(.missingOriginal) = $0.state { return true }
+    return false
+  })
+}
+
+@Test
+func nativeMediaEntrypointsKeepOriginalURLAndReportUnsupportedContent() async throws {
+  let root = FileManager.default.temporaryDirectory
+    .appendingPathComponent("synora-native-media-" + UUID().uuidString, isDirectory: true)
+  try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: root) }
+  let source = root.appendingPathComponent("document.txt")
+  try Data("document".utf8).write(to: source)
+  let store = try AssetStore(rootURL: root.appendingPathComponent("assets"))
+  let asset = try await store.importFile(at: source)
+  #expect(store.originalURL(for: asset) == store.fileURL(for: asset))
+  #expect(store.hasOriginal(for: asset))
+  let item = try store.quickLookItem(for: asset)
+  #expect(item.previewItemURL == store.originalURL(for: asset))
+  #expect(item.previewItemTitle == "document.txt")
+  #expect(throws: MediaAssetError.unsupportedMedia) {
+    try store.player(for: asset)
+  }
+  #expect(throws: MediaAssetError.unsupportedMedia) {
+    try store.pdfDocument(for: asset)
+  }
+  let missing = Asset(
+    id: UUID(), contentHash: String(repeating: "0", count: 64), byteCount: 1,
+    mediaType: UTType.pdf.identifier)
+  #expect(throws: MediaAssetError.missingOriginal) {
+    try store.pdfDocument(for: missing)
+  }
 }

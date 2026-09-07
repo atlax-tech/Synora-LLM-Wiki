@@ -88,6 +88,21 @@ public final class AssetStore: @unchecked Sendable {
       .appendingPathComponent(asset.contentHash)
   }
 
+  public func originalURL(for asset: Asset) -> URL { fileURL(for: asset) }
+
+  public func hasOriginal(for asset: Asset) -> Bool {
+    FileManager.default.fileExists(atPath: fileURL(for: asset).path)
+  }
+
+  public func mediaKind(for asset: Asset) -> AssetPreviewKind {
+    let type = UTType(asset.mediaType ?? "")
+    if Self.isImage(type) { return .image }
+    if Self.isPDF(type) { return .pdf }
+    if Self.isMovie(type) { return .video }
+    if Self.isAudio(type) { return .audio }
+    return .file
+  }
+
   public func importFile(
     at sourceURL: URL,
     assetID: UUID = UUID(),
