@@ -76,9 +76,14 @@ public struct MediaPreviewResult: Hashable, Sendable {
 }
 
 public actor MediaPreviewCoordinator {
+  private struct RequestKey: Hashable {
+    let blockID: UUID
+    let assetID: UUID
+  }
+
   private let store: AssetStore
   private let prefetchLimit: Int
-  private var activeRequests: [UUID: MediaPreviewRequest] = [:]
+  private var activeRequests: [RequestKey: MediaPreviewRequest] = [:]
 
   public init(store: AssetStore, prefetchLimit: Int = 2) {
     self.store = store
@@ -86,11 +91,12 @@ public actor MediaPreviewCoordinator {
   }
 
   public func cancel(blockID: UUID) {
-    activeRequests.removeValue(forKey: blockID)
+    activeRequests = activeRequests.filter { $0.value.blockID != blockID }
   }
 
   public func load(_ request: MediaPreviewRequest) async -> MediaPreviewResult? {
-    activeRequests[request.blockID] = request
+    let key = RequestKey(blockID: request.blockID, assetID: request.asset.id)
+    activeRequests[key] = request
     let state: MediaPreviewState
     do {
       try Task.checkCancellation()
@@ -150,8 +156,9 @@ public actor MediaPreviewCoordinator {
     _ request: MediaPreviewRequest,
     state: MediaPreviewState
   ) -> MediaPreviewResult? {
-    guard activeRequests[request.blockID] == request else { return nil }
-    activeRequests.removeValue(forKey: request.blockID)
+    let key = RequestKey(blockID: request.blockID, assetID: request.asset.id)
+    guard activeRequests[key] == request else { return nil }
+    activeRequests.removeValue(forKey: key)
     return MediaPreviewResult(
       blockID: request.blockID,
       blockRevision: request.blockRevision,

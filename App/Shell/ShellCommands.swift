@@ -10,6 +10,7 @@ struct ShellActions {
   let focusSearch: () -> Void
   let toggleInspector: () -> Void
   let toggleCommandPalette: () -> Void
+  let createRecord: () -> Void
   let selectRecordKind: (RecordKind) -> Void
   let closeTransientLayer: () -> Void
   let inspectorToggleEnabled: Bool
@@ -30,6 +31,7 @@ enum ShellCommand: CaseIterable, Identifiable {
   case toggleSidebar
   case focusSearch
   case toggleInspector
+  case newRecord
   case selectNotes
   case selectJournal
 
@@ -43,6 +45,8 @@ enum ShellCommand: CaseIterable, Identifiable {
       "Focus Search"
     case .toggleInspector:
       "Toggle Inspector"
+    case .newRecord:
+      "New Record"
     case .selectNotes:
       "Show Notes"
     case .selectJournal:
@@ -58,6 +62,8 @@ enum ShellCommand: CaseIterable, Identifiable {
       "magnifyingglass"
     case .toggleInspector:
       "sidebar.right"
+    case .newRecord:
+      "plus"
     case .selectNotes:
       "note.text"
     case .selectJournal:
@@ -73,6 +79,8 @@ enum ShellCommand: CaseIterable, Identifiable {
       "⌘F"
     case .toggleInspector:
       "⌥⌘I"
+    case .newRecord:
+      "⌘N"
     case .selectNotes:
       "⌘1"
     case .selectJournal:
@@ -108,6 +116,12 @@ struct ShellCommands: Commands {
         actions?.toggleCommandPalette()
       }
       .keyboardShortcut("k", modifiers: [.command])
+      .disabled(actions == nil)
+
+      Button("New Record") {
+        actions?.createRecord()
+      }
+      .keyboardShortcut("n", modifiers: [.command])
       .disabled(actions == nil)
 
       Divider()
@@ -183,6 +197,8 @@ struct ShellCommandPalette: View {
       actions.focusSearch()
     case .toggleInspector:
       actions.toggleInspector()
+    case .newRecord:
+      actions.createRecord()
     case .selectNotes:
       actions.selectRecordKind(.note)
     case .selectJournal:

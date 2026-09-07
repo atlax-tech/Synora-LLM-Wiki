@@ -177,6 +177,7 @@ struct ShellRootView: View {
       focusSearch: { presentSearch() },
       toggleInspector: { model.toggleInspector() },
       toggleCommandPalette: { model.toggleCommandPalette() },
+      createRecord: { model.createRecord() },
       selectRecordKind: { model.selectRecordKind($0) },
       closeTransientLayer: { model.setCommandPalettePresented(false) },
       inspectorToggleEnabled: model.inspectorToggleEnabled

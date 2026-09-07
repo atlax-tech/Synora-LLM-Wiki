@@ -6,7 +6,7 @@ import os
 
 public enum EditorTelemetry {
   #if canImport(os)
-  private static let log = OSLog(subsystem: "tech.atlax.SynoraWiki", category: "Editor")
+  private static let log = OSLog(subsystem: "tech.atlax.SynoraWiki", category: "PointsOfInterest")
 
   public static func begin(_ name: StaticString) -> OSSignpostID {
     let id = OSSignpostID(log: log)

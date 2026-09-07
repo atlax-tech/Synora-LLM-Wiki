@@ -41,6 +41,24 @@ enum ShellEnvironment {
     value(for: "SYNORA_FIXTURE")
   }
 
+  static var libraryPath: String {
+    if let configured = value(for: "SYNORA_LIBRARY_PATH"), !configured.isEmpty {
+      return configured
+    }
+    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+      .first ?? FileManager.default.temporaryDirectory
+    return support.appendingPathComponent("SynoraWiki/library.sqlite").path
+  }
+
+  static var assetPath: String {
+    if let configured = value(for: "SYNORA_ASSET_PATH"), !configured.isEmpty {
+      return configured
+    }
+    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+      .first ?? FileManager.default.temporaryDirectory
+    return support.appendingPathComponent("SynoraWiki/assets", isDirectory: true).path
+  }
+
   static var shellState: String? {
     value(for: "SYNORA_SHELL_STATE")
   }
