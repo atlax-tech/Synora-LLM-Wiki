@@ -3,6 +3,9 @@ import SynoraDomain
 
 #if canImport(AppKit)
 import AppKit
+#if canImport(os)
+import os
+#endif
 #endif
 
 public struct BlockTextRange: Hashable, Sendable {
@@ -1684,26 +1687,74 @@ public enum HTMLPasteSanitizer {
 }
 
 #if canImport(AppKit)
+private final class SynoraTextInputView: NSTextView {
+  var onMarkedTextChanged: ((Bool) -> Void)?
+  var onPaint: (() -> Void)?
+  private(set) var composing = false
+
+  override func setMarkedText(
+    _ string: Any,
+    selectedRange: NSRange,
+    replacementRange: NSRange
+  ) {
+    composing = true
+    onMarkedTextChanged?(true)
+    super.setMarkedText(
+      string, selectedRange: selectedRange, replacementRange: replacementRange)
+  }
+
+  override func unmarkText() {
+    super.unmarkText()
+    composing = false
+    onMarkedTextChanged?(false)
+  }
+
+  override func insertText(_ string: Any, replacementRange: NSRange) {
+    let wasComposing = composing || hasMarkedText()
+    super.insertText(string, replacementRange: replacementRange)
+    if wasComposing {
+      composing = false
+      onMarkedTextChanged?(false)
+    }
+  }
+
+  override func draw(_ dirtyRect: NSRect) {
+    super.draw(dirtyRect)
+    onPaint?()
+  }
+}
+
 @MainActor
 public final class SynoraTextView: NSView, NSTextViewDelegate {
-  private let textView: NSTextView
+  private let textView: SynoraTextInputView
   public var onTextChange: (@MainActor (String) -> Void)?
+  private var pendingMarkedTextChange = false
+  private var lastEmittedString = ""
+
+  #if canImport(os)
+  private var pendingPaintSignpost: OSSignpostID?
+  #else
+  private var pendingPaintSignpost: UInt64?
+  #endif
 
   public init() {
-    textView = NSTextView(usingTextLayoutManager: true)
+    textView = SynoraTextInputView(usingTextLayoutManager: true)
     super.init(frame: .zero)
     configure()
   }
 
   required init?(coder: NSCoder) {
-    textView = NSTextView(usingTextLayoutManager: true)
+    textView = SynoraTextInputView(usingTextLayoutManager: true)
     super.init(coder: coder)
     configure()
   }
 
   public var string: String {
     get { textView.string }
-    set { textView.string = newValue }
+    set {
+      textView.string = newValue
+      lastEmittedString = newValue
+    }
   }
 
   public var usesTextLayoutManager: Bool { textView.textLayoutManager != nil }
@@ -1711,12 +1762,21 @@ public final class SynoraTextView: NSView, NSTextViewDelegate {
   public func setDocumentText(_ text: String) {
     let selection = textView.selectedRange()
     textView.textStorage?.setAttributedString(NSAttributedString(string: text))
+    lastEmittedString = text
     textView.setSelectedRange(
       NSRange(location: min(selection.location, (string as NSString).length), length: 0))
   }
 
   public func textDidChange(_ notification: Notification) {
-    onTextChange?(string)
+    // Marked text is an in-progress IME composition. Persist only after the
+    // input method commits it, otherwise pinyin/phonetic intermediates become
+    // durable document content.
+    guard !textView.composing, !textView.hasMarkedText() else {
+      pendingMarkedTextChange = true
+      return
+    }
+    pendingMarkedTextChange = false
+    emitTextChange()
   }
 
   private func configure() {
@@ -1728,7 +1788,53 @@ public final class SynoraTextView: NSView, NSTextViewDelegate {
     textView.isSelectable = true
     textView.textContainerInset = NSSize(width: 18, height: 16)
     textView.font = .systemFont(ofSize: 16)
+    textView.onMarkedTextChanged = { [weak self] marked in
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        self.pendingMarkedTextChange = true
+        if !marked { self.flushMarkedTextChange() }
+      }
+    }
+    textView.onPaint = { [weak self] in self?.endPaintSignpost() }
+    textView.setAccessibilityLabel("Record body")
+    textView.setAccessibilityIdentifier("editor-body")
+    textView.setAccessibilityHelp("Edit the selected record")
     addSubview(textView)
+    setAccessibilityLabel("Record body")
+    setAccessibilityIdentifier("editor-body")
+    setAccessibilityHelp("Edit the selected record")
+  }
+
+  private func emitTextChange() {
+    let value = string
+    guard value != lastEmittedString else {
+      pendingMarkedTextChange = false
+      return
+    }
+    lastEmittedString = value
+    beginPaintSignpost()
+    onTextChange?(value)
+  }
+
+  private func flushMarkedTextChange() {
+    guard pendingMarkedTextChange else { return }
+    guard !textView.composing, !textView.hasMarkedText() else {
+      DispatchQueue.main.async { [weak self] in self?.flushMarkedTextChange() }
+      return
+    }
+    pendingMarkedTextChange = false
+    emitTextChange()
+  }
+
+  private func beginPaintSignpost() {
+    guard pendingPaintSignpost == nil else { return }
+    pendingPaintSignpost = EditorTelemetry.begin("keystrokeToPaint")
+  }
+
+  private func endPaintSignpost() {
+    guard let pendingPaintSignpost else { return }
+    EditorTelemetry.end("keystrokeToPaint", pendingPaintSignpost)
+    self.pendingPaintSignpost = nil
   }
 
   public override func layout() {
