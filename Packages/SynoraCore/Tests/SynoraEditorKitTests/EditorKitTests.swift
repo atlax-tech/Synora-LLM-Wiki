@@ -37,3 +37,23 @@ func textStorageAdapterRejectsSplitComposedCharacterAndMarkdownShortcutsAreDeter
   #expect(MarkdownShortcut.block(for: "# 标题")?.text == "标题")
   #expect(MarkdownShortcut.block(for: "plain") == nil)
 }
+
+@Test
+func textStorageAdapterReplacesAcrossBlocksAndSessionUndoesIt() throws {
+  let recordID = UUID()
+  let firstID = UUID()
+  let secondID = UUID()
+  let document = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: firstID, recordID: recordID, position: 0, text: "one"),
+    Block(id: secondID, recordID: recordID, position: 1, text: "two"),
+  ])
+  var session = EditorSession(document: document)
+  let adapter = TextStorageAdapter(document: document)
+  let start = NSMaxRange(adapter.ranges[0].range) - 1
+  let end = adapter.ranges[1].range.location + 1
+  let updated = try session.apply(
+    range: NSRange(location: start, length: end - start), replacement: "X\nY")
+  #expect(TextStorageAdapter(document: updated).text == "onX\nYwo")
+  #expect(try session.undo() == document)
+  #expect(try session.redo() == updated)
+}

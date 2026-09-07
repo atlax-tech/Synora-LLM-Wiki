@@ -297,6 +297,8 @@ public enum BlockTreeError: Error, Equatable, Sendable {
   case crossRecordParent(UUID)
   case cycle(UUID)
   case invalidChild(UUID)
+  case invalidRange
+  case cannotMerge(UUID)
 }
 
 public struct BlockDocument: Codable, Hashable, Sendable {
@@ -316,6 +318,8 @@ public struct BlockDocument: Codable, Hashable, Sendable {
       guard IDs.insert(block.id).inserted else { throw BlockTreeError.duplicateID(block.id) }
       blockByID[block.id] = block
       guard block.recordID == recordID else { throw BlockTreeError.crossRecordParent(block.id) }
+    }
+    for block in blocks {
       guard block.parentID != block.id else { throw BlockTreeError.cycle(block.id) }
       if let parentID = block.parentID {
         guard let parent = blockByID[parentID] else { throw BlockTreeError.missingParent(parentID) }
@@ -370,6 +374,98 @@ public struct BlockDocument: Codable, Hashable, Sendable {
     return try Self(recordID: recordID, blocks: blocks.filter { !removed.contains($0.id) })
   }
 
+  public func splitting(id: UUID, atUTF16Offset offset: Int, newID: UUID = UUID()) throws -> Self {
+    guard let source = block(id: id), offset >= 0 else { throw BlockTreeError.invalidRange }
+    let value = source.text as NSString
+    guard offset <= value.length,
+      offset == 0 || offset == value.length
+        || value.rangeOfComposedCharacterSequence(at: offset).location == offset
+    else { throw BlockTreeError.invalidRange }
+    guard !blocks.contains(where: { $0.id == newID }) else { throw BlockTreeError.duplicateID(newID) }
+    var copy = self
+    guard let sourceIndex = copy.blocks.firstIndex(where: { $0.id == id }) else {
+      throw BlockTreeError.missingParent(id)
+    }
+    copy.blocks[sourceIndex].text = value.substring(with: NSRange(location: 0, length: offset))
+    var right = Block(
+      id: newID,
+      recordID: source.recordID,
+      position: source.position + 1,
+      text: value.substring(from: offset),
+      revision: source.revision,
+      parentID: source.parentID,
+      type: source.type,
+      orderKey: source.orderKey,
+      attributes: source.attributes,
+      unknownFields: source.unknownFields
+    )
+    let siblings = children(of: source.parentID)
+    let siblingIndex = siblings.firstIndex { $0.id == id } ?? siblings.count
+    let next = siblingIndex + 1 < siblings.count ? siblings[siblingIndex + 1].id : nil
+    right.orderKey = Self.orderKey(previous: source.orderKey, next: next.flatMap { block(id: $0)?.orderKey })
+    right.position = source.position + 1
+    copy.blocks.append(right)
+    return try copy.reindexed()
+  }
+
+  public func merging(id targetID: UUID, with sourceID: UUID) throws -> Self {
+    guard let target = block(id: targetID), let source = block(id: sourceID),
+      targetID != sourceID, target.parentID == source.parentID,
+      descendants(of: sourceID).isEmpty
+    else { throw BlockTreeError.cannotMerge(sourceID) }
+    let siblings = children(of: target.parentID)
+    guard let targetIndex = siblings.firstIndex(where: { $0.id == targetID }),
+      targetIndex + 1 < siblings.count, siblings[targetIndex + 1].id == sourceID
+    else { throw BlockTreeError.cannotMerge(sourceID) }
+    var copy = self
+    guard let index = copy.blocks.firstIndex(where: { $0.id == targetID }) else {
+      throw BlockTreeError.missingParent(targetID)
+    }
+    copy.blocks[index].text += source.text
+    copy.blocks.removeAll { $0.id == sourceID }
+    return try copy.reindexed()
+  }
+
+  public func indenting(id: UUID, under parentID: UUID) throws -> Self {
+    guard let parent = block(id: parentID), parent.type.acceptsChildren else {
+      throw BlockTreeError.invalidChild(id)
+    }
+    return try moving(id: id, to: parentID)
+  }
+
+  public func outdenting(id: UUID) throws -> Self {
+    guard let source = block(id: id), let parentID = source.parentID,
+      let parent = block(id: parentID)
+    else { return self }
+    return try moving(id: id, to: parent.parentID)
+  }
+
+  public func settingType(_ type: BlockType, for id: UUID) throws -> Self {
+    guard let source = block(id: id) else { throw BlockTreeError.missingParent(id) }
+    if !type.acceptsChildren && !descendants(of: id).isEmpty {
+      throw BlockTreeError.invalidChild(id)
+    }
+    var copy = self
+    guard let index = copy.blocks.firstIndex(where: { $0.id == id }) else {
+      throw BlockTreeError.missingParent(id)
+    }
+    copy.blocks[index].type = type
+    if type == .task { copy.blocks[index].attributes["checked"] = source.attributes["checked"] ?? "false" }
+    return try copy.reindexed()
+  }
+
+  public func togglingTask(id: UUID) throws -> Self {
+    guard let source = block(id: id), source.type == .task else {
+      throw BlockTreeError.invalidChild(id)
+    }
+    var copy = self
+    guard let index = copy.blocks.firstIndex(where: { $0.id == id }) else {
+      throw BlockTreeError.missingParent(id)
+    }
+    copy.blocks[index].attributes["checked"] = source.attributes["checked"] == "true" ? "false" : "true"
+    return copy
+  }
+
   public func descendants(of id: UUID) -> [Block] {
     var result: [Block] = []
     var pending = [id]
@@ -388,6 +484,21 @@ public struct BlockDocument: Codable, Hashable, Sendable {
     case let (nil, right?): return right - 1024
     default: return 0
     }
+  }
+
+  private func reindexed() throws -> Self {
+    var copy = self
+    let groups = Dictionary(grouping: copy.blocks, by: \.parentID)
+    for siblings in groups.values {
+      let ordered = siblings.sorted { ($0.orderKey, $0.id.uuidString) < ($1.orderKey, $1.id.uuidString) }
+      for (index, sibling) in ordered.enumerated() {
+        guard let blockIndex = copy.blocks.firstIndex(where: { $0.id == sibling.id }) else { continue }
+        copy.blocks[blockIndex].position = index
+        copy.blocks[blockIndex].orderKey = Int64(index) * 1024
+      }
+    }
+    try copy.validate()
+    return copy
   }
 }
 

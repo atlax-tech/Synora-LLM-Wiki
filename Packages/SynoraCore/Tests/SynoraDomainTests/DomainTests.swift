@@ -114,3 +114,40 @@ func legacyBlockPayloadDecodesWithParagraphDefaults() throws {
   #expect(block.type == .paragraph)
   #expect(block.orderKey == 2048)
 }
+
+@Test
+func blockDocumentEditingPreservesSplitAndMergeIdentity() throws {
+  let recordID = UUID()
+  let firstID = UUID()
+  let secondID = UUID()
+  let document = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: firstID, recordID: recordID, position: 0, text: "中文🙂"),
+    Block(id: secondID, recordID: recordID, position: 1, text: "尾段"),
+  ])
+  let splitID = UUID()
+  let split = try document.splitting(
+    id: firstID, atUTF16Offset: ("中文" as NSString).length, newID: splitID)
+  #expect(split.children().map(\.id) == [firstID, splitID, secondID])
+  #expect(split.block(id: firstID)?.text == "中文")
+  #expect(split.block(id: splitID)?.text == "🙂")
+  let merged = try split.merging(id: firstID, with: splitID)
+  #expect(merged.children().map(\.id) == [firstID, secondID])
+  #expect(merged.block(id: firstID)?.text == "中文🙂")
+}
+
+@Test
+func blockDocumentIndentOutdentAndTaskToggleUseTreeRules() throws {
+  let recordID = UUID()
+  let parentID = UUID()
+  let childID = UUID()
+  let document = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: childID, recordID: recordID, position: 1, text: "child"),
+    Block(id: parentID, recordID: recordID, position: 0, text: "parent", type: .toggle),
+  ])
+  let indented = try document.indenting(id: childID, under: parentID)
+  #expect(indented.block(id: childID)?.parentID == parentID)
+  #expect(try indented.outdenting(id: childID).block(id: childID)?.parentID == nil)
+  let task = try document.settingType(.task, for: childID)
+  #expect(task.block(id: childID)?.attributes["checked"] == "false")
+  #expect(try task.togglingTask(id: childID).block(id: childID)?.attributes["checked"] == "true")
+}
