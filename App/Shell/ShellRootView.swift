@@ -22,6 +22,9 @@ struct ShellRootView: View {
   @State private var themeTransitionOpacity = 0.0
 
   init() {
+    if ShellEnvironment.isUITesting {
+      UserDefaults.standard.removeObject(forKey: "NSToolbar Configuration shell-toolbar")
+    }
     _model = State(initialValue: ShellModel())
     _themeOverride = State(
       initialValue: ShellEnvironment.forcedDarkMode.map { $0 ? .dark : .light }
