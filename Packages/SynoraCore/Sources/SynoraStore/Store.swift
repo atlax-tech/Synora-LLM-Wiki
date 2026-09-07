@@ -551,6 +551,7 @@ public final class ProductStore: @unchecked Sendable {
         parentID: block.parentID.flatMap { remap[$0] },
         type: block.type,
         orderKey: block.orderKey,
+        inlineAttributes: block.inlineAttributes,
         attributes: block.attributes,
         unknownFields: block.unknownFields,
         content: copyContent(block.content)

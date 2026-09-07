@@ -1,6 +1,10 @@
 import Foundation
 import SynoraDomain
 
+#if canImport(AppKit)
+import AppKit
+#endif
+
 public struct BlockTextRange: Hashable, Sendable {
   public let blockID: UUID
   public let range: NSRange
@@ -29,6 +33,10 @@ public struct TextStorageAdapter: Sendable {
     }
     text = value
     ranges = mapped
+  }
+
+  public func range(for blockID: UUID) -> NSRange? {
+    ranges.first(where: { $0.blockID == blockID })?.range
   }
 
   public func applying(range: NSRange, replacement: String, marked: Bool = false) throws
@@ -63,15 +71,36 @@ public struct TextStorageAdapter: Sendable {
     var updated: [Block] = []
     var first = blocks[startIndex]
     first.text = prefix + (pieces.first ?? "") + (pieces.count == 1 ? suffix : "")
+    if pieces.count == 1, startIndex == endIndex {
+      first.inlineAttributes = Self.attributesAfterReplacement(
+        first.inlineAttributes,
+        replacing: NSRange(location: startOffset, length: endOffset - startOffset),
+        replacementLength: (pieces.first ?? "").utf16.count)
+    } else if pieces.count == 1 {
+      let endSource = blocks[endIndex]
+      first.inlineAttributes = Self.attributesBefore(
+        first.inlineAttributes, offset: startOffset)
+        + Self.attributesAfter(
+          endSource.inlineAttributes,
+          offset: endOffset,
+          textLength: (endSource.text as NSString).length,
+          shiftedBy: (prefix + (pieces.first ?? "")).utf16.count)
+    } else {
+      first.inlineAttributes = Self.attributesBefore(
+        first.inlineAttributes, offset: startOffset)
+    }
     updated.append(first)
     if pieces.count > 1 {
       for piece in pieces.dropFirst().dropLast() {
         updated.append(Block(
           id: UUID(), recordID: document.recordID, position: updated.count, text: piece,
-          type: first.type, attributes: first.attributes, unknownFields: first.unknownFields,
+          type: first.type, inlineAttributes: [], attributes: first.attributes,
+          unknownFields: first.unknownFields,
           content: first.content))
       }
       let lastID = endIndex == startIndex ? UUID() : blocks[endIndex].id
+      let lastSource = blocks[endIndex]
+      let lastLength = (lastSource.text as NSString).length
       let last = Block(
         id: lastID,
         recordID: blocks[endIndex].recordID,
@@ -81,6 +110,11 @@ public struct TextStorageAdapter: Sendable {
         parentID: blocks[endIndex].parentID,
         type: blocks[endIndex].type,
         orderKey: blocks[endIndex].orderKey,
+        inlineAttributes: Self.attributesAfter(
+          lastSource.inlineAttributes,
+          offset: endOffset,
+          textLength: lastLength,
+          shiftedBy: (pieces.last ?? "").utf16.count),
         attributes: blocks[endIndex].attributes,
         unknownFields: blocks[endIndex].unknownFields,
         content: blocks[endIndex].content
@@ -129,6 +163,79 @@ public struct TextStorageAdapter: Sendable {
     let range = source.rangeOfComposedCharacterSequence(at: offset)
     return range.location == offset || NSMaxRange(range) == offset
   }
+
+  private static func attributesBefore(
+    _ attributes: [InlineAttribute],
+    offset: Int
+  ) -> [InlineAttribute] {
+    attributes.compactMap { attribute in
+      let end = min(NSMaxRange(attribute.range), offset)
+      guard end > attribute.range.location else { return nil }
+      return InlineAttribute(
+        range: NSRange(location: attribute.range.location, length: end - attribute.range.location),
+        style: attribute.style,
+        value: attribute.value)
+    }
+  }
+
+  private static func attributesAfter(
+    _ attributes: [InlineAttribute],
+    offset: Int,
+    textLength: Int,
+    shiftedBy shift: Int = 0
+  ) -> [InlineAttribute] {
+    attributes.compactMap { attribute in
+      let start = max(attribute.range.location, offset)
+      guard start < min(NSMaxRange(attribute.range), textLength) else { return nil }
+      return InlineAttribute(
+          range: NSRange(
+          location: start - offset + shift,
+          length: min(NSMaxRange(attribute.range), textLength) - start),
+        style: attribute.style,
+        value: attribute.value)
+    }
+  }
+
+  private static func attributesAfterReplacement(
+    _ attributes: [InlineAttribute],
+    replacing range: NSRange,
+    replacementLength: Int
+  ) -> [InlineAttribute] {
+    let delta = replacementLength - range.length
+    return attributes.flatMap { attribute -> [InlineAttribute] in
+      let start = attribute.range.location
+      let end = NSMaxRange(attribute.range)
+      if range.length == 0, start < range.location, end > range.location {
+        return [InlineAttribute(
+          range: NSRange(location: start, length: attribute.range.length + replacementLength),
+          style: attribute.style,
+          value: attribute.value)]
+      }
+      if end <= range.location { return [attribute] }
+      if start >= NSMaxRange(range) {
+        return [InlineAttribute(
+          range: NSRange(location: start + delta, length: attribute.range.length),
+          style: attribute.style,
+          value: attribute.value)]
+      }
+      var pieces: [InlineAttribute] = []
+      if start < range.location {
+        pieces.append(InlineAttribute(
+          range: NSRange(location: start, length: range.location - start),
+          style: attribute.style,
+          value: attribute.value))
+      }
+      if end > NSMaxRange(range) {
+        pieces.append(InlineAttribute(
+          range: NSRange(
+            location: range.location + replacementLength,
+            length: end - NSMaxRange(range)),
+          style: attribute.style,
+          value: attribute.value))
+      }
+      return pieces
+    }
+  }
 }
 
 public struct EditorFocus: Hashable, Sendable {
@@ -166,6 +273,381 @@ public enum EditorError: Error, Equatable, Sendable {
   case unsupportedCommand
   case noUndo
   case noRedo
+  case invalidURL
+  case invalidPaste
+  case emptyQuery
+}
+
+public enum InlineFormatting {
+  public static func isCovered(
+    _ attributes: [InlineAttribute],
+    style: InlineStyle,
+    range: NSRange
+  ) -> Bool {
+    guard range.length > 0 else { return false }
+    var cursor = range.location
+    for attribute in attributes
+      .filter({ $0.style == style && NSMaxRange($0.range) > range.location && $0.range.location < NSMaxRange(range) })
+      .sorted(by: { $0.range.location < $1.range.location }) {
+      if attribute.range.location > cursor { return false }
+      cursor = max(cursor, NSMaxRange(attribute.range))
+      if cursor >= NSMaxRange(range) { return true }
+    }
+    return false
+  }
+
+  public static func styles(
+    _ attributes: [InlineAttribute],
+    covering range: NSRange
+  ) -> Set<InlineStyle> {
+    Set(InlineStyle.allCases.filter { isCovered(attributes, style: $0, range: range) })
+  }
+
+  public static func applying(
+    _ attributes: [InlineAttribute],
+    style: InlineStyle,
+    range: NSRange,
+    enabled: Bool,
+    value: String? = nil
+  ) -> [InlineAttribute] {
+    var result = attributes.flatMap { attribute -> [InlineAttribute] in
+      guard attribute.style == style else { return [attribute] }
+      let start = attribute.range.location
+      let end = NSMaxRange(attribute.range)
+      if end <= range.location || start >= NSMaxRange(range) { return [attribute] }
+      var pieces: [InlineAttribute] = []
+      if start < range.location {
+        pieces.append(InlineAttribute(
+          range: NSRange(location: start, length: range.location - start),
+          style: style,
+          value: attribute.value))
+      }
+      if end > NSMaxRange(range) {
+        pieces.append(InlineAttribute(
+          range: NSRange(location: NSMaxRange(range), length: end - NSMaxRange(range)),
+          style: style,
+          value: attribute.value))
+      }
+      return pieces
+    }
+    if enabled { result.append(InlineAttribute(range: range, style: style, value: value)) }
+    return normalized(result)
+  }
+
+  public static func normalized(_ attributes: [InlineAttribute]) -> [InlineAttribute] {
+    var result: [InlineAttribute] = []
+    for attribute in attributes.filter({ $0.range.length > 0 }).sorted(by: {
+      ($0.range.location, NSMaxRange($0.range), $0.style.rawValue, $0.value ?? "")
+        < ($1.range.location, NSMaxRange($1.range), $1.style.rawValue, $1.value ?? "")
+    }) {
+      guard let previous = result.last,
+        previous.style == attribute.style,
+        previous.value == attribute.value,
+        NSMaxRange(previous.range) >= attribute.range.location
+      else {
+        result.append(attribute)
+        continue
+      }
+      result[result.count - 1] = InlineAttribute(
+        range: NSRange(
+          location: previous.range.location,
+          length: max(NSMaxRange(previous.range), NSMaxRange(attribute.range))
+            - previous.range.location),
+        style: previous.style,
+        value: previous.value)
+    }
+    return result
+  }
+}
+
+public struct EditorFormatBarState: Hashable, Sendable {
+  public let selection: NSRange
+  public let isPresented: Bool
+  public let activeStyles: Set<InlineStyle>
+
+  public init(document: BlockDocument, selection: NSRange) {
+    self.selection = selection
+    let adapter = TextStorageAdapter(document: document)
+    guard selection.location >= 0, selection.length > 0,
+      NSMaxRange(selection) <= (adapter.text as NSString).length else {
+      isPresented = false
+      activeStyles = []
+      return
+    }
+    let selected = adapter.ranges.compactMap { mapped -> Set<InlineStyle>? in
+      let start = max(selection.location, mapped.range.location)
+      let end = min(NSMaxRange(selection), NSMaxRange(mapped.range))
+      guard end > start, let block = document.block(id: mapped.blockID) else { return nil }
+      return InlineFormatting.styles(
+        block.inlineAttributes,
+        covering: NSRange(location: start - mapped.range.location, length: end - start))
+    }
+    isPresented = !selected.isEmpty
+    activeStyles = selected.dropFirst().reduce(selected.first ?? []) {
+      $0.intersection($1)
+    }
+  }
+}
+
+public struct FindOptions: OptionSet, Codable, Hashable, Sendable {
+  public let rawValue: Int
+
+  public init(rawValue: Int) { self.rawValue = rawValue }
+
+  public static let caseSensitive = Self(rawValue: 1 << 0)
+  public static let wholeWord = Self(rawValue: 1 << 1)
+}
+
+public struct SearchMatch: Hashable, Sendable {
+  public let blockID: UUID?
+  public let range: NSRange
+  public let value: String
+
+  public init(blockID: UUID? = nil, range: NSRange, value: String) {
+    self.blockID = blockID
+    self.range = range
+    self.value = value
+  }
+}
+
+public enum TextSearch {
+  public static func ranges(
+    in text: String,
+    query: String,
+    options: FindOptions = []
+  ) -> [NSRange] {
+    guard !query.isEmpty else { return [] }
+    let source = text as NSString
+    let needle = query as NSString
+    var result: [NSRange] = []
+    var cursor = 0
+    var searchOptions: NSString.CompareOptions = []
+    if !options.contains(.caseSensitive) { searchOptions.insert(.caseInsensitive) }
+    while cursor <= source.length - needle.length {
+      let range = source.range(
+        of: needle as String,
+        options: searchOptions,
+        range: NSRange(location: cursor, length: source.length - cursor))
+      guard range.location != NSNotFound else { break }
+      if !options.contains(.wholeWord) || isWordBoundary(range, in: source) {
+        result.append(range)
+      }
+      cursor = max(NSMaxRange(range), cursor + 1)
+    }
+    return result
+  }
+
+  public static func matches(
+    in document: BlockDocument,
+    query: String,
+    options: FindOptions = []
+  ) -> [SearchMatch] {
+    guard !query.isEmpty else { return [] }
+    let adapter = TextStorageAdapter(document: document)
+    let source = adapter.text as NSString
+    return ranges(in: adapter.text, query: query, options: options).map { range in
+      let blockID = adapter.ranges.first(where: {
+        NSLocationInRange(range.location, $0.range)
+          || NSLocationInRange(max(range.location, NSMaxRange(range) - 1), $0.range)
+      })?.blockID
+      return SearchMatch(blockID: blockID, range: range, value: source.substring(with: range))
+    }
+  }
+
+  public static func find(
+    in document: BlockDocument,
+    query: String,
+    options: FindOptions = []
+  ) -> [SearchMatch] {
+    matches(in: document, query: query, options: options)
+  }
+
+  public static func replacingAll(
+    in document: BlockDocument,
+    query: String,
+    with replacement: String,
+    options: FindOptions = []
+  ) throws -> BlockDocument {
+    guard !query.isEmpty else { throw EditorError.emptyQuery }
+    var next = document
+    for match in matches(in: document, query: query, options: options).reversed() {
+      next = try TextStorageAdapter(document: next).applying(
+        range: match.range,
+        replacement: replacement)
+    }
+    return next
+  }
+
+  private static func isWordBoundary(_ range: NSRange, in source: NSString) -> Bool {
+    func isWord(_ value: unichar) -> Bool {
+      CharacterSet.alphanumerics.contains(UnicodeScalar(value)!) || value == 95
+    }
+    let before = range.location > 0 ? source.character(at: range.location - 1) : nil
+    let after = NSMaxRange(range) < source.length ? source.character(at: NSMaxRange(range)) : nil
+    return (before == nil || !isWord(before!)) && (after == nil || !isWord(after!))
+  }
+}
+
+public struct SpellingIssue: Hashable, Sendable {
+  public let range: NSRange
+  public let word: String
+
+  public init(range: NSRange, word: String) {
+    self.range = range
+    self.word = word
+  }
+}
+
+public enum SpellChecker {
+  #if canImport(AppKit)
+  @MainActor
+  public static func issues(in text: String, language: String? = nil) -> [SpellingIssue] {
+    let checker = NSSpellChecker.shared
+    let source = text as NSString
+    var result: [SpellingIssue] = []
+    var cursor = 0
+    while cursor < source.length {
+      let issue = checker.checkSpelling(of: text, startingAt: cursor)
+      guard issue.location != NSNotFound, issue.length > 0 else { break }
+      result.append(SpellingIssue(
+        range: issue,
+        word: source.substring(with: issue)))
+      cursor = NSMaxRange(issue)
+    }
+    _ = language
+    return result
+  }
+  #else
+  public static func issues(in text: String, language: String? = nil) -> [SpellingIssue] {
+    _ = language
+    return []
+  }
+  #endif
+}
+
+public struct RichTextFragment: Codable, Hashable, Sendable {
+  public let text: String
+  public let inlineAttributes: [InlineAttribute]
+
+  public init(text: String, inlineAttributes: [InlineAttribute] = []) {
+    self.text = text
+    self.inlineAttributes = inlineAttributes
+  }
+
+  public var inlineMarks: [InlineAttribute] { inlineAttributes }
+}
+
+public enum PastePayload: Hashable, Sendable {
+  case structured(BlockClipboard)
+  case richText(RichTextFragment)
+  case html(String)
+  case plainText(String)
+  case files([URL])
+}
+
+public struct PreparedPaste: Hashable, Sendable {
+  public let text: String?
+  public let inlineAttributes: [InlineAttribute]
+  public let clipboard: BlockClipboard?
+  public let fileURLs: [URL]
+
+  public init(
+    text: String? = nil,
+    inlineAttributes: [InlineAttribute] = [],
+    clipboard: BlockClipboard? = nil,
+    fileURLs: [URL] = []
+  ) {
+    self.text = text
+    self.inlineAttributes = inlineAttributes
+    self.clipboard = clipboard
+    self.fileURLs = fileURLs
+  }
+}
+
+public enum EditorURLValidator {
+  public static func isSupported(_ value: String) -> Bool {
+    guard !value.contains(where: { $0.isWhitespace || $0.isNewline }),
+      let url = URL(string: value), let scheme = url.scheme?.lowercased()
+    else { return false }
+    return ["http", "https", "mailto"].contains(scheme)
+  }
+}
+
+public enum PasteboardDecoder {
+  public static func prepare(_ payload: PastePayload) throws -> PreparedPaste {
+    switch payload {
+    case .structured(let clipboard):
+      try validate(clipboard)
+      return PreparedPaste(clipboard: clipboard)
+    case .richText(let fragment):
+      guard validate(fragment.inlineAttributes, text: fragment.text) else {
+        throw EditorError.invalidPaste
+      }
+      return PreparedPaste(
+        text: fragment.text,
+        inlineAttributes: InlineFormatting.normalized(fragment.inlineAttributes))
+    case .html(let html):
+      return PreparedPaste(text: HTMLPasteSanitizer.plainText(html))
+    case .plainText(let text):
+      return PreparedPaste(text: text)
+    case .files(let urls):
+      guard urls.allSatisfy({ $0.isFileURL }) else { throw EditorError.invalidPaste }
+      return PreparedPaste(fileURLs: urls)
+    }
+  }
+
+  public static func structured(_ data: Data) throws -> BlockClipboard {
+    guard let clipboard = try? JSONDecoder().decode(BlockClipboard.self, from: data) else {
+      throw EditorError.invalidPaste
+    }
+    try validate(clipboard)
+    return clipboard
+  }
+
+  private static func validate(_ clipboard: BlockClipboard) throws {
+    guard !clipboard.blocks.isEmpty else { throw EditorError.invalidPaste }
+    let IDs = clipboard.blocks.map(\.id)
+    guard Set(IDs).count == IDs.count else { throw EditorError.invalidPaste }
+    guard Set(clipboard.blocks.map(\.recordID)).count == 1 else {
+      throw EditorError.invalidPaste
+    }
+    let byID = Dictionary(uniqueKeysWithValues: clipboard.blocks.map { ($0.id, $0) })
+    for block in clipboard.blocks {
+      let length = (block.text as NSString).length
+      guard block.inlineAttributes.allSatisfy({
+        $0.range.location >= 0 && $0.range.length > 0
+          && $0.range.location <= length && $0.range.length <= length - $0.range.location
+      }) else { throw EditorError.invalidPaste }
+      switch block.content {
+      case .table? where block.type != .table:
+        throw EditorError.invalidPaste
+      case .assets? where ![.image, .gallery, .video, .audio, .pdf, .file].contains(block.type):
+        throw EditorError.invalidPaste
+      case .link(let card)? where block.type != .link || !EditorURLValidator.isSupported(card.url):
+        throw EditorError.invalidPaste
+      default:
+        break
+      }
+      if let parentID = block.parentID, let parent = byID[parentID], !parent.type.acceptsChildren {
+        throw EditorError.invalidPaste
+      }
+      var visited: Set<UUID> = []
+      var ancestor = block.parentID
+      while let parentID = ancestor, let parent = byID[parentID] {
+        guard visited.insert(parentID).inserted else { throw EditorError.invalidPaste }
+        ancestor = parent.parentID
+      }
+    }
+  }
+
+  private static func validate(_ attributes: [InlineAttribute], text: String) -> Bool {
+    let length = (text as NSString).length
+    return attributes.allSatisfy {
+      $0.range.location >= 0 && $0.range.length > 0
+        && $0.range.location <= length && $0.range.length <= length - $0.range.location
+        && ($0.style != .link || ($0.value.map(EditorURLValidator.isSupported) ?? false))
+    }
+  }
 }
 
 public struct EditorSession: Sendable {
@@ -408,6 +890,119 @@ public struct EditorSession: Sendable {
       idGenerator: idGenerator))
   }
 
+  public func preparePaste(_ payload: PastePayload) throws -> PreparedPaste {
+    try PasteboardDecoder.prepare(payload)
+  }
+
+  @discardableResult
+  public mutating func paste(
+    _ payload: PastePayload,
+    at range: NSRange? = nil,
+    into parentID: UUID? = nil,
+    before siblingID: UUID? = nil,
+    idGenerator: any IDGenerator = UUIDGenerator()
+  ) throws -> BlockDocument {
+    let prepared = try PasteboardDecoder.prepare(payload)
+    if let clipboard = prepared.clipboard {
+      return commit(try document.pasting(
+        clipboard,
+        into: parentID,
+        before: siblingID,
+        idGenerator: idGenerator))
+    }
+    guard prepared.fileURLs.isEmpty, let text = prepared.text else {
+      throw EditorError.unsupportedCommand
+    }
+    let adapter = TextStorageAdapter(document: document)
+    let insertionRange = try rangeForPaste(range, in: adapter)
+    var next = try adapter.applying(range: insertionRange, replacement: text)
+    if !prepared.inlineAttributes.isEmpty {
+      next = try applyingPastedAttributes(
+        prepared.inlineAttributes,
+        textLength: (text as NSString).length,
+        atGlobalOffset: insertionRange.location,
+        to: next)
+    }
+    return commit(next, focus: focus(atGlobalOffset: insertionRange.location + (text as NSString).length, in: next))
+  }
+
+  public func formattingState(for selection: NSRange) -> EditorFormatBarState {
+    EditorFormatBarState(document: document, selection: selection)
+  }
+
+  @discardableResult
+  public mutating func applyFormatting(
+    _ style: InlineStyle,
+    in selection: NSRange,
+    linkURL: String? = nil
+  ) throws -> BlockDocument {
+    let adapter = TextStorageAdapter(document: document)
+    let source = adapter.text as NSString
+    guard selection.location >= 0, selection.length > 0,
+      NSMaxRange(selection) <= source.length,
+      Self.isComposedBoundary(selection.location, in: source),
+      Self.isComposedBoundary(NSMaxRange(selection), in: source)
+    else { throw EditorError.invalidSelection }
+    if let linkURL {
+      guard style == .link, EditorURLValidator.isSupported(linkURL) else {
+        throw EditorError.invalidURL
+      }
+    }
+    let segments = adapter.ranges.compactMap { mapped -> (UUID, NSRange)? in
+      let start = max(selection.location, mapped.range.location)
+      let end = min(NSMaxRange(selection), NSMaxRange(mapped.range))
+      guard end > start else { return nil }
+      return (mapped.blockID, NSRange(location: start - mapped.range.location, length: end - start))
+    }
+    guard !segments.isEmpty else { throw EditorError.invalidSelection }
+    let enabled = !segments.allSatisfy { blockID, range in
+      guard let block = document.block(id: blockID) else { return false }
+      return InlineFormatting.isCovered(block.inlineAttributes, style: style, range: range)
+    }
+    if style == .link, enabled, linkURL == nil {
+      throw EditorError.invalidURL
+    }
+    var next = document
+    for (blockID, range) in segments {
+      guard let block = next.block(id: blockID) else { throw EditorError.invalidSelection }
+      let attributes = InlineFormatting.applying(
+        block.inlineAttributes,
+        style: style,
+        range: range,
+        enabled: enabled,
+        value: style == .link ? linkURL : nil)
+      next = try next.settingInlineAttributes(attributes, for: blockID)
+    }
+    return commit(next)
+  }
+
+  @discardableResult
+  public mutating func applyFormat(
+    _ style: InlineStyle,
+    in selection: NSRange,
+    linkURL: String? = nil
+  ) throws -> BlockDocument {
+    try applyFormatting(style, in: selection, linkURL: linkURL)
+  }
+
+  public func find(query: String, options: FindOptions = []) -> [SearchMatch] {
+    TextSearch.matches(in: document, query: query, options: options)
+  }
+
+  @discardableResult
+  public mutating func replaceAll(
+    query: String,
+    with replacement: String,
+    options: FindOptions = []
+  ) throws -> BlockDocument {
+    guard !query.isEmpty else { throw EditorError.emptyQuery }
+    return commit(try TextSearch.replacingAll(
+      in: document,
+      query: query,
+      with: replacement,
+      options: options))
+  }
+
   @discardableResult
   public mutating func editTableCell(
     in blockID: UUID,
@@ -529,6 +1124,67 @@ public struct EditorSession: Sendable {
       next.block(id: $0.key) != nil && next.block(id: $0.value.blockID) != nil
     }
     return next
+  }
+
+  private func rangeForPaste(
+    _ requested: NSRange?,
+    in adapter: TextStorageAdapter
+  ) throws -> NSRange {
+    if let requested {
+      let length = (adapter.text as NSString).length
+      guard requested.location >= 0, requested.length >= 0,
+        NSMaxRange(requested) <= length,
+        Self.isComposedBoundary(requested.location, in: adapter.text as NSString),
+        Self.isComposedBoundary(NSMaxRange(requested), in: adapter.text as NSString)
+      else { throw EditorError.invalidSelection }
+      return requested
+    }
+    if let focus, focus.tableCell == nil,
+      let mapped = adapter.ranges.first(where: { $0.blockID == focus.blockID }) {
+      return NSRange(location: mapped.range.location + focus.utf16Offset, length: 0)
+    }
+    return NSRange(location: (adapter.text as NSString).length, length: 0)
+  }
+
+  private func applyingPastedAttributes(
+    _ attributes: [InlineAttribute],
+    textLength: Int,
+    atGlobalOffset offset: Int,
+    to document: BlockDocument
+  ) throws -> BlockDocument {
+    let adapter = TextStorageAdapter(document: document)
+    var next = document
+    for mapped in adapter.ranges {
+      let blockStart = max(mapped.range.location, offset)
+      let blockEnd = min(NSMaxRange(mapped.range), offset + textLength)
+      guard blockEnd > blockStart, let block = next.block(id: mapped.blockID) else { continue }
+      var blockAttributes = block.inlineAttributes
+      for attribute in attributes {
+        let markStart = offset + attribute.range.location
+        let markEnd = offset + NSMaxRange(attribute.range)
+        let start = max(blockStart, markStart)
+        let end = min(blockEnd, markEnd)
+        guard end > start else { continue }
+        blockAttributes.append(InlineAttribute(
+          range: NSRange(location: start - mapped.range.location, length: end - start),
+          style: attribute.style,
+          value: attribute.value))
+      }
+      next = try next.settingInlineAttributes(
+        InlineFormatting.normalized(blockAttributes),
+        for: mapped.blockID)
+    }
+    return next
+  }
+
+  private func focus(atGlobalOffset offset: Int, in document: BlockDocument) -> EditorFocus? {
+    let adapter = TextStorageAdapter(document: document)
+    guard let mapped = adapter.ranges.first(where: {
+      offset <= NSMaxRange($0.range)
+    }), let block = document.block(id: mapped.blockID) else { return nil }
+    return EditorFocus(
+      blockID: mapped.blockID,
+      utf16Offset: min(max(offset - mapped.range.location, 0), (block.text as NSString).length))
   }
 
   public mutating func undo() throws -> BlockDocument {
@@ -918,8 +1574,16 @@ public enum ReferenceParser {
 public enum HTMLPasteSanitizer {
   public static func plainText(_ html: String) -> String {
     var value = html
-    value = value.replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: .regularExpression)
-    value = value.replacingOccurrences(of: "</p>\\s*<p[^>]*>", with: "\n", options: .regularExpression)
+    value = value.replacingOccurrences(
+      of: "<(script|style|iframe|object|embed)[^>]*>[\\s\\S]*?</\\1>",
+      with: "",
+      options: [.regularExpression, .caseInsensitive])
+    value = value.replacingOccurrences(of: "<!--.*?-->", with: "", options: [.regularExpression, .caseInsensitive])
+    value = value.replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: [.regularExpression, .caseInsensitive])
+    value = value.replacingOccurrences(
+      of: "</(p|div|li|h[1-6])>\\s*<(p|div|li|h[1-6])[^>]*>",
+      with: "\n",
+      options: [.regularExpression, .caseInsensitive])
     value = value.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
     return value
       .replacingOccurrences(of: "&amp;", with: "&")
@@ -931,8 +1595,6 @@ public enum HTMLPasteSanitizer {
 }
 
 #if canImport(AppKit)
-import AppKit
-
 @MainActor
 public final class SynoraTextView: NSView, NSTextViewDelegate {
   private let textView: NSTextView

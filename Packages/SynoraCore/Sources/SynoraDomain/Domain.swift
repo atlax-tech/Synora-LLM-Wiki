@@ -200,6 +200,31 @@ public enum CalloutStyle: String, Codable, CaseIterable, Hashable, Sendable {
   case error
 }
 
+public enum InlineStyle: String, Codable, CaseIterable, Hashable, Sendable {
+  case bold
+  case italic
+  case strikethrough
+  case inlineCode
+  case link
+
+  public static var code: Self { .inlineCode }
+}
+
+public struct InlineAttribute: Codable, Hashable, Sendable {
+  public var range: NSRange
+  public var style: InlineStyle
+  public var value: String?
+
+  public init(range: NSRange, style: InlineStyle, value: String? = nil) {
+    self.range = range
+    self.style = style
+    self.value = value
+  }
+}
+
+public typealias InlineMark = InlineAttribute
+public typealias InlineFormat = InlineStyle
+
 public enum JSONValue: Codable, Hashable, Sendable {
   case object([String: JSONValue])
   case array([JSONValue])
@@ -487,6 +512,7 @@ public struct Block: Codable, Hashable, Sendable {
   public var orderKey: Int64
   public var position: Int
   public var text: String
+  public var inlineAttributes: [InlineAttribute]
   public var attributes: [String: String]
   public var unknownFields: [String: JSONValue]
   public var content: BlockContent?
@@ -501,6 +527,7 @@ public struct Block: Codable, Hashable, Sendable {
     parentID: UUID? = nil,
     type: BlockType = .paragraph,
     orderKey: Int64? = nil,
+    inlineAttributes: [InlineAttribute] = [],
     attributes: [String: String] = [:],
     unknownFields: [String: JSONValue] = [:],
     content: BlockContent? = nil
@@ -512,6 +539,7 @@ public struct Block: Codable, Hashable, Sendable {
     self.orderKey = orderKey ?? Int64(position) * 1024
     self.position = position
     self.text = text
+    self.inlineAttributes = inlineAttributes
     self.attributes = attributes
     self.unknownFields = unknownFields
     self.content = content
@@ -527,6 +555,7 @@ public struct Block: Codable, Hashable, Sendable {
     parentID: UUID? = nil,
     type: BlockType = .paragraph,
     orderKey: Int64? = nil,
+    inlineAttributes: [InlineAttribute] = [],
     attributes: [String: String] = [:],
     unknownFields: [String: JSONValue] = [:]
   ) {
@@ -539,6 +568,7 @@ public struct Block: Codable, Hashable, Sendable {
       parentID: parentID,
       type: type,
       orderKey: orderKey,
+      inlineAttributes: inlineAttributes,
       attributes: attributes,
       unknownFields: unknownFields,
       content: nil
@@ -552,7 +582,7 @@ public struct Block: Codable, Hashable, Sendable {
   }
 
   private enum CodingKeys: String, CodingKey {
-    case id, recordID, parentID, type, orderKey, position, text, attributes, unknownFields, content, revision
+    case id, recordID, parentID, type, orderKey, position, text, inlineAttributes, attributes, unknownFields, content, revision
   }
 
   public init(from decoder: Decoder) throws {
@@ -567,6 +597,7 @@ public struct Block: Codable, Hashable, Sendable {
       parentID: try container.decodeIfPresent(UUID.self, forKey: .parentID),
       type: try container.decodeIfPresent(BlockType.self, forKey: .type) ?? .paragraph,
       orderKey: try container.decodeIfPresent(Int64.self, forKey: .orderKey) ?? Int64(position) * 1024,
+      inlineAttributes: try container.decodeIfPresent([InlineAttribute].self, forKey: .inlineAttributes) ?? [],
       attributes: try container.decodeIfPresent([String: String].self, forKey: .attributes) ?? [:],
       unknownFields: try container.decodeIfPresent([String: JSONValue].self, forKey: .unknownFields) ?? [:],
       content: try container.decodeIfPresent(BlockContent.self, forKey: .content)
@@ -595,6 +626,11 @@ public struct Block: Codable, Hashable, Sendable {
     guard type == .callout else { return nil }
     return CalloutStyle(rawValue: attributes["calloutStyle"] ?? attributes["style"] ?? "")
       ?? .info
+  }
+
+  public var inlineMarks: [InlineAttribute] {
+    get { inlineAttributes }
+    set { inlineAttributes = newValue }
   }
 }
 
@@ -634,6 +670,16 @@ public struct BlockDocument: Codable, Hashable, Sendable {
       guard IDs.insert(block.id).inserted else { throw BlockTreeError.duplicateID(block.id) }
       blockByID[block.id] = block
       guard block.recordID == recordID else { throw BlockTreeError.crossRecordParent(block.id) }
+      guard block.type.supportsTextEditing || block.inlineAttributes.isEmpty else {
+        throw BlockTreeError.invalidRange
+      }
+      let textLength = (block.text as NSString).length
+      for attribute in block.inlineAttributes {
+        guard attribute.range.location >= 0, attribute.range.length > 0,
+          attribute.range.location <= textLength,
+          attribute.range.length <= textLength - attribute.range.location
+        else { throw BlockTreeError.invalidRange }
+      }
     }
     for block in blocks {
       guard block.parentID != block.id else { throw BlockTreeError.cycle(block.id) }
@@ -699,6 +745,8 @@ public struct BlockDocument: Codable, Hashable, Sendable {
       throw BlockTreeError.missingParent(id)
     }
     copy.blocks[index].text = text
+    copy.blocks[index].inlineAttributes = Self.clampedInlineAttributes(
+      copy.blocks[index].inlineAttributes, to: text)
     try copy.validate()
     return copy
   }
@@ -710,8 +758,33 @@ public struct BlockDocument: Codable, Hashable, Sendable {
       throw BlockTreeError.missingParent(id)
     }
     copy.blocks[index].text = text
+    copy.blocks[index].inlineAttributes = Self.clampedInlineAttributes(
+      copy.blocks[index].inlineAttributes, to: text)
     try copy.validate()
     return copy
+  }
+
+  public func settingInlineAttributes(
+    _ inlineAttributes: [InlineAttribute],
+    for id: UUID
+  ) throws -> Self {
+    guard let source = block(id: id), source.type.supportsTextEditing else {
+      throw BlockTreeError.nonTextBlock(id)
+    }
+    var copy = self
+    guard let index = copy.blocks.firstIndex(where: { $0.id == id }) else {
+      throw BlockTreeError.missingParent(id)
+    }
+    copy.blocks[index].inlineAttributes = inlineAttributes
+    try copy.validate()
+    return copy
+  }
+
+  public func settingInlineMarks(
+    _ inlineAttributes: [InlineAttribute],
+    for id: UUID
+  ) throws -> Self {
+    try settingInlineAttributes(inlineAttributes, for: id)
   }
 
   public func editingTableCell(
@@ -850,6 +923,9 @@ public struct BlockDocument: Codable, Hashable, Sendable {
       throw BlockTreeError.missingParent(id)
     }
     copy.blocks[sourceIndex].text = value.substring(with: NSRange(location: 0, length: offset))
+    copy.blocks[sourceIndex].inlineAttributes = Self.slicedInlineAttributes(
+      source.inlineAttributes,
+      to: NSRange(location: 0, length: offset))
     var right = Block(
       id: newID,
       recordID: source.recordID,
@@ -859,6 +935,10 @@ public struct BlockDocument: Codable, Hashable, Sendable {
       parentID: source.parentID,
       type: source.type,
       orderKey: source.orderKey,
+      inlineAttributes: Self.slicedInlineAttributes(
+        source.inlineAttributes,
+        to: NSRange(location: offset, length: value.length - offset),
+        shiftedBy: -offset),
       attributes: source.attributes,
       unknownFields: source.unknownFields,
       content: source.content
@@ -885,7 +965,12 @@ public struct BlockDocument: Codable, Hashable, Sendable {
     guard let index = copy.blocks.firstIndex(where: { $0.id == targetID }) else {
       throw BlockTreeError.missingParent(targetID)
     }
+    let targetLength = (target.text as NSString).length
     copy.blocks[index].text += source.text
+    copy.blocks[index].inlineAttributes += Self.slicedInlineAttributes(
+      source.inlineAttributes,
+      to: NSRange(location: 0, length: (source.text as NSString).length),
+      shiftedBy: targetLength)
     copy.blocks.removeAll { $0.id == sourceID }
     return try copy.reindexed()
   }
@@ -928,6 +1013,7 @@ public struct BlockDocument: Codable, Hashable, Sendable {
       copy.blocks[index].attributes["calloutStyle"] = source.attributes["calloutStyle"]
         ?? source.attributes["style"] ?? CalloutStyle.info.rawValue
     }
+    if !type.supportsTextEditing { copy.blocks[index].inlineAttributes = [] }
     if type == .divider { copy.blocks[index].text = "" }
     if type == .table {
       if case .table? = copy.blocks[index].content { }
@@ -1035,6 +1121,7 @@ public struct BlockDocument: Codable, Hashable, Sendable {
         parentID: targetParent,
         type: source.type,
         orderKey: source.orderKey,
+        inlineAttributes: source.inlineAttributes,
         attributes: source.attributes,
         unknownFields: source.unknownFields,
         content: source.content)
@@ -1077,6 +1164,42 @@ public struct BlockDocument: Codable, Hashable, Sendable {
     copy.blocks[index].content = content
     try copy.validate()
     return copy
+  }
+
+  private static func clampedInlineAttributes(
+    _ attributes: [InlineAttribute],
+    to text: String
+  ) -> [InlineAttribute] {
+    let length = (text as NSString).length
+    return attributes.compactMap { attribute in
+      let start = min(max(attribute.range.location, 0), length)
+      let end = min(max(NSMaxRange(attribute.range), start), length)
+      guard end > start else { return nil }
+      return InlineAttribute(
+        range: NSRange(location: start, length: end - start),
+        style: attribute.style,
+        value: attribute.value)
+    }
+  }
+
+  private static func slicedInlineAttributes(
+    _ attributes: [InlineAttribute],
+    to range: NSRange,
+    shiftedBy shift: Int = 0
+  ) -> [InlineAttribute] {
+    let start = range.location
+    let end = NSMaxRange(range)
+    return attributes.compactMap { attribute in
+      let overlapStart = max(attribute.range.location, start)
+      let overlapEnd = min(NSMaxRange(attribute.range), end)
+      guard overlapEnd > overlapStart else { return nil }
+      return InlineAttribute(
+        range: NSRange(
+          location: overlapStart - start + shift,
+          length: overlapEnd - overlapStart),
+        style: attribute.style,
+        value: attribute.value)
+    }
   }
 
   private func updatingTable(

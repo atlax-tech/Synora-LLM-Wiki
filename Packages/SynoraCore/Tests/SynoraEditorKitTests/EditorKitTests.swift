@@ -283,3 +283,88 @@ func referencesUseStableIDsAndOnlyResolveLocalTargets() throws {
   _ = try session.undo()
   #expect(session.document == source)
 }
+
+@Test
+func formattingBarHandlesMixedCrossBlockSelectionAndUndo() throws {
+  let recordID = UUID()
+  let firstID = UUID()
+  let secondID = UUID()
+  let document = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: firstID, recordID: recordID, position: 0, text: "你好"),
+    Block(id: secondID, recordID: recordID, position: 1, text: "世界"),
+  ])
+  var session = EditorSession(document: document)
+  let selection = NSRange(location: 1, length: 3)
+  #expect(!session.formattingState(for: NSRange(location: 0, length: 0)).isPresented)
+  _ = try session.applyFormatting(.bold, in: selection)
+  #expect(session.document.block(id: firstID)?.inlineAttributes == [
+    InlineAttribute(range: NSRange(location: 1, length: 1), style: .bold),
+  ])
+  #expect(session.document.block(id: secondID)?.inlineAttributes == [
+    InlineAttribute(range: NSRange(location: 0, length: 1), style: .bold),
+  ])
+  #expect(session.formattingState(for: selection).activeStyles == [.bold])
+  #expect(throws: EditorError.invalidURL) {
+    try session.applyFormatting(.link, in: selection, linkURL: "javascript:alert(1)")
+  }
+  _ = try session.applyFormatting(.link, in: selection, linkURL: "https://example.com")
+  #expect(session.document.block(id: firstID)?.inlineAttributes.contains {
+    $0.style == .link && $0.value == "https://example.com"
+  } == true)
+  #expect(try JSONDecoder().decode(
+    BlockDocument.self,
+    from: JSONEncoder().encode(session.document)) == session.document)
+  _ = try session.undo()
+  #expect(session.document.block(id: firstID)?.inlineAttributes.count == 1)
+  _ = try session.undo()
+  #expect(session.document == document)
+}
+
+@Test
+func findReplaceSupportsChineseAndOneUndoGroup() throws {
+  let recordID = UUID()
+  let firstID = UUID()
+  let secondID = UUID()
+  let document = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: firstID, recordID: recordID, position: 0, text: "苹果苹果"),
+    Block(id: secondID, recordID: recordID, position: 1, text: "苹果"),
+  ])
+  #expect(TextSearch.matches(in: document, query: "苹果").count == 3)
+  var session = EditorSession(document: document)
+  _ = try session.replaceAll(query: "苹果", with: "香蕉")
+  #expect(TextStorageAdapter(document: session.document).text == "香蕉香蕉\n香蕉")
+  _ = try session.undo()
+  #expect(session.document == document)
+  #expect(throws: EditorError.emptyQuery) {
+    try session.replaceAll(query: "", with: "ignored")
+  }
+}
+
+@Test
+func pastePreservesSafeRichTextSanitizesHTMLAndKeepsFilesForAssetPipeline() throws {
+  let recordID = UUID()
+  let blockID = UUID()
+  let document = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: blockID, recordID: recordID, position: 0, text: "")
+  ])
+  var session = EditorSession(document: document)
+  let rich = RichTextFragment(
+    text: "加粗",
+    inlineAttributes: [InlineAttribute(
+      range: NSRange(location: 0, length: ("加粗" as NSString).length), style: .bold)])
+  _ = try session.paste(.richText(rich), at: NSRange(location: 0, length: 0))
+  #expect(session.document.block(id: blockID)?.text == "加粗")
+  #expect(session.document.block(id: blockID)?.inlineAttributes.first?.style == .bold)
+  _ = try session.undo()
+  #expect(session.document == document)
+
+  let html = "<p>A</p><script>window.evil=1</script><p>B &amp; C</p>"
+  #expect(HTMLPasteSanitizer.plainText(html) == "A\nB & C")
+  let prepared = try session.preparePaste(.files([URL(fileURLWithPath: "/tmp/example.pdf")]))
+  #expect(prepared.fileURLs == [URL(fileURLWithPath: "/tmp/example.pdf")])
+  #expect(throws: EditorError.invalidPaste) {
+    try session.preparePaste(.richText(RichTextFragment(
+      text: "bad", inlineAttributes: [InlineAttribute(
+        range: NSRange(location: 0, length: 4), style: .bold)])))
+  }
+}
