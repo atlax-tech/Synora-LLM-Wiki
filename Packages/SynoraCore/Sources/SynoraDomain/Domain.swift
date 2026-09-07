@@ -146,6 +146,49 @@ public enum BlockType: Codable, Hashable, Sendable {
       false
     }
   }
+
+  public var isList: Bool {
+    switch self {
+    case .bulletedList, .numberedList, .task: true
+    default: false
+    }
+  }
+
+  public var supportsTextEditing: Bool {
+    switch self {
+    case .paragraph, .heading1, .heading2, .heading3, .bulletedList, .numberedList, .task,
+      .quote, .code:
+      true
+    default:
+      false
+    }
+  }
+
+  public var accessibilityName: String {
+    switch self {
+    case .paragraph: "Paragraph"
+    case .heading1: "Heading 1"
+    case .heading2: "Heading 2"
+    case .heading3: "Heading 3"
+    case .bulletedList: "Bulleted list item"
+    case .numberedList: "Numbered list item"
+    case .task: "Task"
+    case .quote: "Quote"
+    case .code: "Code"
+    case .divider: "Divider"
+    case .table: "Table"
+    case .toggle: "Toggle"
+    case .callout: "Callout"
+    case .image: "Image"
+    case .gallery: "Gallery"
+    case .video: "Video"
+    case .audio: "Audio"
+    case .pdf: "PDF"
+    case .file: "File"
+    case .link: "Link"
+    case .unknown: "Unknown block"
+    }
+  }
 }
 
 public enum JSONValue: Codable, Hashable, Sendable {
@@ -425,16 +468,33 @@ public struct Block: Codable, Hashable, Sendable {
       content: try container.decodeIfPresent(BlockContent.self, forKey: .content)
     )
   }
+
+  public var accessibilityDescription: String {
+    if type == .task {
+      let state = attributes["checked"] == "true" ? "Completed" : "Unchecked"
+      return "\(state) task: \(text)"
+    }
+    return "\(type.accessibilityName): \(text)"
+  }
+}
+
+public struct BlockClipboard: Codable, Hashable, Sendable {
+  public let blocks: [Block]
+
+  public init(blocks: [Block]) { self.blocks = blocks }
 }
 
 public enum BlockTreeError: Error, Equatable, Sendable {
   case duplicateID(UUID)
   case missingParent(UUID)
+  case missingSibling(UUID)
   case crossRecordParent(UUID)
   case cycle(UUID)
   case invalidChild(UUID)
   case invalidRange
   case cannotMerge(UUID)
+  case nonTextBlock(UUID)
+  case invalidClipboard
 }
 
 public struct BlockDocument: Codable, Hashable, Sendable {
@@ -481,27 +541,76 @@ public struct BlockDocument: Codable, Hashable, Sendable {
 
   public func block(id: UUID) -> Block? { blocks.first { $0.id == id } }
 
+  public func creating(
+    _ type: BlockType = .paragraph,
+    text: String = "",
+    parentID: UUID? = nil,
+    before siblingID: UUID? = nil,
+    id: UUID = UUID(),
+    attributes: [String: String] = [:]
+  ) throws -> Self {
+    var attributes = attributes
+    if type == .task { attributes["checked"] = attributes["checked"] ?? "false" }
+    return try inserting(
+      Block(
+        id: id,
+        recordID: recordID,
+        position: children(of: parentID).count,
+        text: type == .divider ? "" : text,
+        parentID: parentID,
+        type: type,
+        attributes: attributes),
+      before: siblingID)
+  }
+
+  public func editing(id: UUID, text: String) throws -> Self {
+    guard let source = block(id: id) else { throw BlockTreeError.missingParent(id) }
+    guard source.type.supportsTextEditing else { throw BlockTreeError.nonTextBlock(id) }
+    var copy = self
+    guard let index = copy.blocks.firstIndex(where: { $0.id == id }) else {
+      throw BlockTreeError.missingParent(id)
+    }
+    copy.blocks[index].text = text
+    try copy.validate()
+    return copy
+  }
+
   public func inserting(_ block: Block, before siblingID: UUID? = nil) throws -> Self {
+    guard block.recordID == recordID else { throw BlockTreeError.crossRecordParent(block.id) }
     var copy = self
     var inserted = block
     let siblings = children(of: block.parentID)
-    let index = siblingID.flatMap { sibling in siblings.firstIndex { $0.id == sibling } } ?? siblings.count
+    let index: Int
+    if let siblingID {
+      guard let siblingIndex = siblings.firstIndex(where: { $0.id == siblingID }) else {
+        throw BlockTreeError.missingSibling(siblingID)
+      }
+      index = siblingIndex
+    } else {
+      index = siblings.count
+    }
     let previous = index > 0 ? siblings[index - 1].orderKey : nil
     let next = index < siblings.count ? siblings[index].orderKey : nil
     inserted.orderKey = Self.orderKey(previous: previous, next: next)
     inserted.position = index
     copy.blocks.append(inserted)
-    try copy.validate()
-    return copy
+    if let previous, let next, next - previous <= 1 {
+      return try copy.reindexed(parentID: block.parentID, placing: inserted.id, at: index)
+    }
+    return try copy.repositioned(parentID: block.parentID)
   }
 
   public func moving(id: UUID, to parentID: UUID?, before siblingID: UUID? = nil) throws -> Self {
     guard let source = block(id: id) else { throw BlockTreeError.missingParent(id) }
+    guard parentID != id, !descendants(of: id).contains(where: { $0.id == parentID }) else {
+      throw BlockTreeError.cycle(id)
+    }
     var copy = self
     copy.blocks.removeAll { $0.id == id }
     var moved = source
     moved.parentID = parentID
-    return try copy.inserting(moved, before: siblingID)
+    let inserted = try copy.inserting(moved, before: siblingID)
+    return try inserted.repositioned(parentID: source.parentID)
   }
 
   public func deleting(id: UUID) throws -> Self {
@@ -533,7 +642,8 @@ public struct BlockDocument: Codable, Hashable, Sendable {
       type: source.type,
       orderKey: source.orderKey,
       attributes: source.attributes,
-      unknownFields: source.unknownFields
+      unknownFields: source.unknownFields,
+      content: source.content
     )
     let siblings = children(of: source.parentID)
     let siblingIndex = siblings.firstIndex { $0.id == id } ?? siblings.count
@@ -586,7 +696,12 @@ public struct BlockDocument: Codable, Hashable, Sendable {
       throw BlockTreeError.missingParent(id)
     }
     copy.blocks[index].type = type
-    if type == .task { copy.blocks[index].attributes["checked"] = source.attributes["checked"] ?? "false" }
+    if type == .task {
+      copy.blocks[index].attributes["checked"] = source.attributes["checked"] ?? "false"
+    } else {
+      copy.blocks[index].attributes.removeValue(forKey: "checked")
+    }
+    if type == .divider { copy.blocks[index].text = "" }
     return try copy.reindexed()
   }
 
@@ -602,6 +717,89 @@ public struct BlockDocument: Codable, Hashable, Sendable {
     return copy
   }
 
+  public func listNumber(for id: UUID) -> Int? {
+    guard let source = block(id: id), source.type == .numberedList else { return nil }
+    let siblings = children(of: source.parentID)
+    guard let index = siblings.firstIndex(where: { $0.id == id }) else { return nil }
+    var number = 0
+    for sibling in siblings[...index] {
+      if sibling.type == .numberedList {
+        number += 1
+      } else {
+        number = 0
+      }
+    }
+    return number == 0 ? nil : number
+  }
+
+  public func copying(ids: [UUID]) throws -> BlockClipboard {
+    guard !ids.isEmpty else { return BlockClipboard(blocks: []) }
+    let selected = Set(ids)
+    guard selected.count == ids.count, ids.allSatisfy({ block(id: $0) != nil }) else {
+      throw BlockTreeError.invalidClipboard
+    }
+    let roots = linearizedBlocks().filter { block in
+      selected.contains(block.id) && (block.parentID == nil || !selected.contains(block.parentID!))
+    }
+    let copied = roots.flatMap { subtree(of: $0.id) }
+    return BlockClipboard(blocks: copied)
+  }
+
+  public func pasting(
+    _ clipboard: BlockClipboard,
+    into parentID: UUID? = nil,
+    before siblingID: UUID? = nil,
+    idGenerator: any IDGenerator = UUIDGenerator()
+  ) throws -> Self {
+    guard !clipboard.blocks.isEmpty else { return self }
+    if let parentID {
+      guard let parent = block(id: parentID), parent.type.acceptsChildren else {
+        throw BlockTreeError.invalidChild(parentID)
+      }
+    }
+    if let siblingID {
+      guard let sibling = block(id: siblingID), sibling.parentID == parentID else {
+        throw BlockTreeError.missingSibling(siblingID)
+      }
+    }
+    let sourceIDs = clipboard.blocks.map(\.id)
+    guard Set(sourceIDs).count == sourceIDs.count else { throw BlockTreeError.invalidClipboard }
+    let sourceIDSet = Set(sourceIDs)
+    let roots = clipboard.blocks.filter {
+      $0.parentID == nil || !sourceIDSet.contains($0.parentID!)
+    }
+    guard roots.count > 0 else { throw BlockTreeError.invalidClipboard }
+    var remap: [UUID: UUID] = [:]
+    for sourceID in sourceIDs {
+      let targetID = idGenerator.next()
+      guard !remap.values.contains(targetID), block(id: targetID) == nil else {
+        throw BlockTreeError.duplicateID(targetID)
+      }
+      remap[sourceID] = targetID
+    }
+
+    var result = self
+    for source in clipboard.blocks {
+      let isRoot = source.parentID == nil || !sourceIDSet.contains(source.parentID!)
+      let targetParent = isRoot ? parentID : remap[source.parentID!]
+      guard isRoot || targetParent != nil else { throw BlockTreeError.invalidClipboard }
+      let copied = Block(
+        id: remap[source.id]!,
+        recordID: recordID,
+        position: result.children(of: targetParent).count,
+        text: source.text,
+        revision: 0,
+        parentID: targetParent,
+        type: source.type,
+        orderKey: source.orderKey,
+        attributes: source.attributes,
+        unknownFields: source.unknownFields,
+        content: source.content)
+      result = try result.inserting(copied, before: isRoot ? siblingID : nil)
+    }
+    return result
+  }
+
   public func descendants(of id: UUID) -> [Block] {
     var result: [Block] = []
     var pending = [id]
@@ -613,6 +811,21 @@ public struct BlockDocument: Codable, Hashable, Sendable {
     return result
   }
 
+  private func linearizedBlocks() -> [Block] {
+    func visit(_ parentID: UUID?) -> [Block] {
+      children(of: parentID).flatMap { block in [block] + visit(block.id) }
+    }
+    return visit(nil)
+  }
+
+  private func subtree(of id: UUID) -> [Block] {
+    guard let root = block(id: id) else { return [] }
+    func visit(_ parentID: UUID) -> [Block] {
+      children(of: parentID).flatMap { block in [block] + visit(block.id) }
+    }
+    return [root] + visit(id)
+  }
+
   private static func orderKey(previous: Int64?, next: Int64?) -> Int64 {
     switch (previous, next) {
     case let (left?, right?) where right - left > 1: return left + (right - left) / 2
@@ -622,18 +835,47 @@ public struct BlockDocument: Codable, Hashable, Sendable {
     }
   }
 
-  private func reindexed() throws -> Self {
+  private func repositioned(parentID: UUID?) throws -> Self {
     var copy = self
-    let groups = Dictionary(grouping: copy.blocks, by: \.parentID)
-    for siblings in groups.values {
-      let ordered = siblings.sorted { ($0.orderKey, $0.id.uuidString) < ($1.orderKey, $1.id.uuidString) }
-      for (index, sibling) in ordered.enumerated() {
-        guard let blockIndex = copy.blocks.firstIndex(where: { $0.id == sibling.id }) else { continue }
-        copy.blocks[blockIndex].position = index
-        copy.blocks[blockIndex].orderKey = Int64(index) * 1024
-      }
+    let ordered = copy.children(of: parentID)
+    for (index, sibling) in ordered.enumerated() {
+      guard let blockIndex = copy.blocks.firstIndex(where: { $0.id == sibling.id }) else { continue }
+      copy.blocks[blockIndex].position = index
     }
     try copy.validate()
+    return copy
+  }
+
+  private func reindexed(parentID: UUID?) throws -> Self {
+    var copy = self
+    let ordered = copy.children(of: parentID)
+    for (index, sibling) in ordered.enumerated() {
+      guard let blockIndex = copy.blocks.firstIndex(where: { $0.id == sibling.id }) else { continue }
+      copy.blocks[blockIndex].position = index
+      copy.blocks[blockIndex].orderKey = Int64(index) * 1024
+    }
+    try copy.validate()
+    return copy
+  }
+
+  private func reindexed(parentID: UUID?, placing insertedID: UUID, at index: Int) throws -> Self {
+    var copy = self
+    var orderedIDs = copy.children(of: parentID).map(\.id)
+    orderedIDs.removeAll { $0 == insertedID }
+    orderedIDs.insert(insertedID, at: min(max(index, 0), orderedIDs.count))
+    for (position, id) in orderedIDs.enumerated() {
+      guard let blockIndex = copy.blocks.firstIndex(where: { $0.id == id }) else { continue }
+      copy.blocks[blockIndex].position = position
+      copy.blocks[blockIndex].orderKey = Int64(position) * 1024
+    }
+    try copy.validate()
+    return copy
+  }
+
+  private func reindexed() throws -> Self {
+    var copy = self
+    let parentIDs = Set(copy.blocks.map(\.parentID))
+    for parentID in parentIDs { copy = try copy.reindexed(parentID: parentID) }
     return copy
   }
 }

@@ -158,11 +158,7 @@ public struct EditorSession: Sendable {
     guard !marked else { return document }
     let next = try TextStorageAdapter(document: document).applying(
       range: range, replacement: replacement)
-    guard next != document else { return document }
-    undoStack.append(document)
-    redoStack.removeAll()
-    document = next
-    return next
+    return commit(next)
   }
 
   @discardableResult
@@ -199,6 +195,92 @@ public struct EditorSession: Sendable {
     case .outdent:
       next = try document.outdenting(id: blockID)
     }
+    return commit(next)
+  }
+
+  @discardableResult
+  public mutating func pressReturn(
+    in blockID: UUID,
+    atUTF16Offset offset: Int,
+    newID: UUID = UUID()
+  ) throws -> BlockDocument {
+    guard let block = document.block(id: blockID),
+      block.type.supportsTextEditing || block.type == .divider else {
+      throw EditorError.invalidSelection
+    }
+    if block.type == .divider {
+      guard offset == 0 else { throw EditorError.invalidSelection }
+      let siblings = document.children(of: block.parentID)
+      guard let index = siblings.firstIndex(where: { $0.id == blockID }) else {
+        throw EditorError.invalidSelection
+      }
+      let nextID = index + 1 < siblings.count ? siblings[index + 1].id : nil
+      return commit(try document.creating(
+        .paragraph, parentID: block.parentID, before: nextID, id: newID))
+    }
+    if block.type.isList && block.text.isEmpty && document.descendants(of: blockID).isEmpty {
+      guard offset == 0 else { throw EditorError.invalidSelection }
+      return commit(try document.settingType(.paragraph, for: blockID))
+    }
+    return commit(try document.splitting(id: blockID, atUTF16Offset: offset, newID: newID))
+  }
+
+  @discardableResult
+  public mutating func pressBackspace(
+    in blockID: UUID,
+    atUTF16Offset offset: Int
+  ) throws -> BlockDocument {
+    guard let block = document.block(id: blockID), offset >= 0 else {
+      throw EditorError.invalidSelection
+    }
+    let value = block.text as NSString
+    guard offset <= value.length else { throw EditorError.invalidSelection }
+    if offset == 0 {
+      if block.type.isList && block.text.isEmpty {
+        return commit(try document.settingType(.paragraph, for: blockID))
+      }
+      if block.type == .divider { return commit(try document.deleting(id: blockID)) }
+      let siblings = document.children(of: block.parentID)
+      guard let index = siblings.firstIndex(where: { $0.id == blockID }), index > 0 else {
+        return document
+      }
+      return commit(try document.merging(id: siblings[index - 1].id, with: blockID))
+    }
+    if offset < value.length {
+      let boundary = value.rangeOfComposedCharacterSequence(at: offset)
+      guard boundary.location == offset || NSMaxRange(boundary) == offset else {
+        throw EditorError.invalidSelection
+      }
+    }
+    let previous = value.rangeOfComposedCharacterSequence(at: offset - 1)
+    guard let mapped = TextStorageAdapter(document: document).ranges.first(where: { $0.blockID == blockID }) else {
+      throw EditorError.invalidSelection
+    }
+    let next = try TextStorageAdapter(document: document).applying(
+      range: NSRange(location: mapped.range.location + previous.location, length: previous.length),
+      replacement: "")
+    return commit(next)
+  }
+
+  public func copy(blockIDs: [UUID]) throws -> BlockClipboard {
+    try document.copying(ids: blockIDs)
+  }
+
+  @discardableResult
+  public mutating func paste(
+    _ clipboard: BlockClipboard,
+    into parentID: UUID? = nil,
+    before siblingID: UUID? = nil,
+    idGenerator: any IDGenerator = UUIDGenerator()
+  ) throws -> BlockDocument {
+    commit(try document.pasting(
+      clipboard,
+      into: parentID,
+      before: siblingID,
+      idGenerator: idGenerator))
+  }
+
+  private mutating func commit(_ next: BlockDocument) -> BlockDocument {
     guard next != document else { return document }
     undoStack.append(document)
     redoStack.removeAll()

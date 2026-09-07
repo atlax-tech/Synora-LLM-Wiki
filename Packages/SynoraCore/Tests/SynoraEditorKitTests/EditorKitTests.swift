@@ -70,3 +70,83 @@ func markdownSlashReferencesAndPasteRemainDeterministic() {
   #expect(references[0].targetID == id)
   #expect(HTMLPasteSanitizer.plainText("<p>A</p><p>B &amp; C</p>") == "A\nB & C")
 }
+
+@Test
+func basicEditorReturnBackspaceAndUndoFollowBlockRules() throws {
+  let recordID = UUID(uuidString: "00000000-0000-4000-8000-000000000050")!
+  let firstID = UUID(uuidString: "00000000-0000-4000-8000-000000000051")!
+  let secondID = UUID(uuidString: "00000000-0000-4000-8000-000000000052")!
+  let splitID = UUID(uuidString: "00000000-0000-4000-8000-000000000053")!
+  let document = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: firstID, recordID: recordID, position: 0, text: "标题", type: .heading1),
+    Block(id: secondID, recordID: recordID, position: 1, text: "正文", type: .paragraph),
+  ])
+  var session = EditorSession(document: document)
+
+  _ = try session.pressReturn(
+    in: firstID, atUTF16Offset: ("标" as NSString).length, newID: splitID)
+  #expect(session.document.children().map(\.id) == [firstID, splitID, secondID])
+  #expect(session.document.block(id: splitID)?.type == .heading1)
+  #expect(session.document.block(id: firstID)?.text == "标")
+  #expect(session.document.block(id: splitID)?.text == "题")
+
+  _ = try session.pressBackspace(in: splitID, atUTF16Offset: 0)
+  #expect(session.document.children().map(\.id) == [firstID, secondID])
+  #expect(session.document.block(id: firstID)?.text == "标题")
+  _ = try session.undo()
+  #expect(session.document.children().map(\.id) == [firstID, splitID, secondID])
+  _ = try session.redo()
+  #expect(session.document.children().map(\.id) == [firstID, secondID])
+}
+
+@Test
+func emptyListReturnExitsToParagraphAndBackspaceDeletesDivider() throws {
+  let recordID = UUID()
+  let listID = UUID()
+  let dividerID = UUID()
+  var session = EditorSession(document: try BlockDocument(recordID: recordID, blocks: [
+    Block(id: listID, recordID: recordID, position: 0, text: "", type: .bulletedList),
+    Block(id: dividerID, recordID: recordID, position: 1, text: "", type: .divider),
+  ]))
+
+  _ = try session.pressReturn(in: listID, atUTF16Offset: 0)
+  #expect(session.document.block(id: listID)?.type == .paragraph)
+  let paragraphID = UUID(uuidString: "00000000-0000-4000-8000-000000000054")!
+  _ = try session.pressReturn(in: dividerID, atUTF16Offset: 0, newID: paragraphID)
+  #expect(session.document.children().map(\.id) == [listID, dividerID, paragraphID])
+  _ = try session.pressBackspace(in: dividerID, atUTF16Offset: 0)
+  #expect(session.document.children().map(\.id) == [listID, paragraphID])
+}
+
+@Test
+func backspaceRejectsComposedCharacterInterior() throws {
+  let recordID = UUID()
+  let blockID = UUID()
+  var session = EditorSession(document: try BlockDocument(recordID: recordID, blocks: [
+    Block(id: blockID, recordID: recordID, position: 0, text: "🙂", type: .paragraph),
+  ]))
+  #expect(throws: EditorError.invalidSelection) {
+    try session.pressBackspace(in: blockID, atUTF16Offset: 1)
+  }
+  #expect(session.document.block(id: blockID)?.text == "🙂")
+}
+
+@Test
+func crossTypeSelectionKeepsEachBlockStructure() throws {
+  let recordID = UUID()
+  let headingID = UUID()
+  let codeID = UUID()
+  let document = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: headingID, recordID: recordID, position: 0, text: "标题", type: .heading2),
+    Block(id: codeID, recordID: recordID, position: 1, text: "代码", type: .code),
+  ])
+  let adapter = TextStorageAdapter(document: document)
+  var session = EditorSession(document: document)
+  let start = adapter.ranges[0].range.location
+  let end = NSMaxRange(adapter.ranges[1].range)
+  _ = try session.apply(range: NSRange(location: start, length: end - start), replacement: "新标题\n新代码")
+  #expect(session.document.block(id: headingID)?.type == .heading2)
+  #expect(session.document.block(id: codeID)?.type == .code)
+  #expect(session.document.block(id: headingID)?.text == "新标题")
+  #expect(session.document.block(id: codeID)?.text == "新代码")
+}
