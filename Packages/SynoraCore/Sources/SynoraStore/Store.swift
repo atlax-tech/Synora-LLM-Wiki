@@ -255,6 +255,21 @@ public final class ProductStore: @unchecked Sendable {
     }
   }
 
+  public func template(id: UUID) throws -> RecordTemplate? {
+    try pool.read { db in
+      guard let row = try Row.fetchOne(
+        db, sql: "SELECT payload FROM templates WHERE id = ?", arguments: [id.uuidString])
+      else { return nil }
+      return try Self.decode(RecordTemplate.self, from: row["payload"] as Any)
+    }
+  }
+
+  public func deleteTemplate(id: UUID) throws {
+    try pool.write { db in
+      try db.execute(sql: "DELETE FROM templates WHERE id = ?", arguments: [id.uuidString])
+    }
+  }
+
   @discardableResult
   public func applyTemplate(
     _ template: RecordTemplate,
@@ -385,6 +400,22 @@ public final class ProductStore: @unchecked Sendable {
     let receipt = try save(record: newRecord, document: document, expectedRevision: 0, operationID: operationID)
     guard let saved = try self.record(id: newRecord.id) else { throw ProductStoreError.missingRecord }
     return (saved, receipt)
+  }
+
+  @discardableResult
+  public func updateMetadata(
+    recordID: UUID,
+    metadata: [String: String],
+    expectedRevision: Int,
+    operationID: UUID? = nil
+  ) throws -> StoreReceipt {
+    guard var record = try record(id: recordID) else { throw ProductStoreError.missingRecord }
+    record.metadata = metadata
+    return try save(
+      record: record,
+      document: try document(recordID: recordID),
+      expectedRevision: expectedRevision,
+      operationID: operationID)
   }
 
   public func history(recordID: UUID) throws -> [HistoryEntry] {

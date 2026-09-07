@@ -212,6 +212,36 @@ func productStoreTemplatesCopyTreeIDsAndRefuseSilentReplacement() throws {
 }
 
 @Test
+func productStoreEditsTemplatesAndMetadataThroughTheSameTransactionPath() throws {
+  let path = FileManager.default.temporaryDirectory
+    .appendingPathComponent("synora-product-\(UUID().uuidString)", isDirectory: true)
+    .appendingPathComponent("library.sqlite").path
+  defer { try? FileManager.default.removeItem(atPath: path) }
+  let store = try ProductStore(path: path)
+  let templateID = UUID()
+  let template = RecordTemplate(id: templateID, name: "Blank", kind: .note)
+  try store.saveTemplate(template)
+  var edited = template
+  edited.name = "Edited"
+  edited.metadata = ["tag": "work"]
+  try store.saveTemplate(edited)
+  #expect(try store.template(id: templateID) == edited)
+  try store.deleteTemplate(id: templateID)
+  #expect(try store.template(id: templateID) == nil)
+
+  let (record, _) = try store.create(title: "Metadata")
+  _ = try store.updateMetadata(
+    recordID: record.id, metadata: ["favorite": "true", "tag": "work"], expectedRevision: 1)
+  #expect(try store.record(id: record.id)?.metadata == ["favorite": "true", "tag": "work"])
+  let reopened = try ProductStore(path: path)
+  #expect(try reopened.record(id: record.id)?.metadata["favorite"] == "true")
+  _ = try reopened.undo(recordID: record.id)
+  #expect(try reopened.record(id: record.id)?.metadata.isEmpty == true)
+  _ = try reopened.redo(recordID: record.id)
+  #expect(try reopened.record(id: record.id)?.metadata["tag"] == "work")
+}
+
+@Test
 func productStorePersistsAssetMetadataAlongsideTheDocumentStore() throws {
   let path = FileManager.default.temporaryDirectory
     .appendingPathComponent("synora-product-\(UUID().uuidString)", isDirectory: true)
