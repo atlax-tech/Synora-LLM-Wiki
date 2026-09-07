@@ -72,6 +72,8 @@ final class ShellModel {
   private(set) var editorSelectionByRecordID: [UUID: NSRange] = [:]
   private(set) var editorSaveState: EditorSaveState = .saved
   private(set) var editorError: String?
+  private(set) var historyByRecordID: [UUID: [HistoryEntry]] = [:]
+  private(set) var templatesByKind: [RecordKind: [RecordTemplate]] = [:]
 
   private(set) var desiredSidebarVisible: Bool
   private(set) var desiredInspectorVisible: Bool
@@ -457,6 +459,212 @@ final class ShellModel {
     scheduleSave(for: record.id, delay: 0)
   }
 
+  func history(for record: Record) -> [HistoryEntry] {
+    historyByRecordID[record.id] ?? []
+  }
+
+  func loadHistory(for record: Record) {
+    guard let store else {
+      historyByRecordID[record.id] = []
+      return
+    }
+    let recordID = record.id
+    Task { [weak self, store] in
+      do {
+        let entries = try await Task.detached(priority: .userInitiated) {
+          try store.history(recordID: recordID)
+        }.value
+        guard let self else { return }
+        self.historyByRecordID[recordID] = entries
+      } catch {
+        self?.editorError = String(describing: error)
+      }
+    }
+  }
+
+  func restoreHistory(_ entry: HistoryEntry, for record: Record) {
+    guard let store else {
+      editorSaveState = .failed
+      return
+    }
+    saveTasks[record.id]?.cancel()
+    let recordID = record.id
+    editorSaveState = .saving
+    Task { [weak self, store] in
+      do {
+        _ = try await Task.detached(priority: .userInitiated) {
+          try store.restore(recordID: recordID, sequence: entry.sequence)
+        }.value
+        let restored = try await Task.detached(priority: .userInitiated) {
+          guard let saved = try store.record(id: recordID) else {
+            throw ProductStoreError.missingRecord
+          }
+          return (saved, try store.document(recordID: recordID))
+        }.value
+        guard let self else { return }
+        self.applyPersistedEditor(record: restored.0, document: restored.1)
+        self.loadHistory(for: Record(domain: restored.0, summary: ""))
+      } catch is RevisionError {
+        self?.editorSaveState = .conflict
+      } catch {
+        self?.editorSaveState = .failed
+        self?.editorError = String(describing: error)
+      }
+    }
+  }
+
+  func templates(for kind: RecordKind) -> [RecordTemplate] {
+    templatesByKind[kind] ?? []
+  }
+
+  func loadTemplates(for kind: RecordKind) {
+    guard let store else {
+      templatesByKind[kind] = []
+      return
+    }
+    Task { [weak self, store] in
+      do {
+        let templates = try await Task.detached(priority: .userInitiated) {
+          try store.templates(kind: kind == .journal ? .journal : .note)
+        }.value
+        self?.templatesByKind[kind] = templates
+      } catch {
+        self?.editorError = String(describing: error)
+      }
+    }
+  }
+
+  func applyTemplate(
+    _ template: RecordTemplate,
+    to record: Record,
+    replaceExisting: Bool = false
+  ) {
+    guard let store else {
+      editorSaveState = .failed
+      return
+    }
+    saveTasks[record.id]?.cancel()
+    let recordID = record.id
+    let expectedRevision = record.revision
+    editorSaveState = .saving
+    Task { [weak self, store] in
+      do {
+        _ = try await Task.detached(priority: .userInitiated) {
+          try store.applyTemplate(
+            template,
+            to: recordID,
+            expectedRevision: expectedRevision,
+            replaceExisting: replaceExisting)
+        }.value
+        let applied = try await Task.detached(priority: .userInitiated) {
+          guard let saved = try store.record(id: recordID) else {
+            throw ProductStoreError.missingRecord
+          }
+          return (saved, try store.document(recordID: recordID))
+        }.value
+        guard let self else { return }
+        self.applyPersistedEditor(record: applied.0, document: applied.1)
+        self.loadTemplates(for: record.kind)
+      } catch is RevisionError {
+        self?.editorSaveState = .conflict
+      } catch {
+        self?.editorSaveState = .failed
+        self?.editorError = String(describing: error)
+      }
+    }
+  }
+
+  func saveCurrentAsTemplate(named name: String, for record: Record) {
+    guard let store, let document = documentsByRecordID[record.id], !name.isEmpty else {
+      editorSaveState = .failed
+      return
+    }
+    let template = RecordTemplate(
+      name: name,
+      kind: record.kind == .journal ? .journal : .note,
+      blocks: document.blocks,
+      metadata: editableMetadata(for: record))
+    let kind = record.kind
+    Task { [weak self, store] in
+      do {
+        try await Task.detached(priority: .userInitiated) {
+          try store.saveTemplate(template)
+        }.value
+        guard let self else { return }
+        self.templatesByKind[kind, default: []].removeAll { $0.id == template.id }
+        self.templatesByKind[kind, default: []].append(template)
+      } catch {
+        self?.editorSaveState = .failed
+        self?.editorError = String(describing: error)
+      }
+    }
+  }
+
+  func metadataText(for record: Record) -> String {
+    editableMetadata(for: record)
+      .keys.sorted()
+      .compactMap { key in
+        guard let value = editableMetadata(for: record)[key] else { return nil }
+        return "\(key)=\(value)"
+      }
+      .joined(separator: "\n")
+  }
+
+  func updateMetadataText(_ text: String, for record: Record) {
+    var metadata = record.metadata.filter { !Self.internalMetadataKeys.contains($0.key) }
+    for line in text.split(whereSeparator: \.isNewline) {
+      let parts = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+      guard parts.count == 2 else { continue }
+      let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+      let value = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !key.isEmpty, !Self.internalMetadataKeys.contains(key) else { continue }
+      metadata[key] = value
+    }
+    updateMetadata(metadata, for: record)
+  }
+
+  func updateMetadata(_ metadata: [String: String], for record: Record) {
+    guard let store else {
+      editorSaveState = .failed
+      return
+    }
+    saveTasks[record.id]?.cancel()
+    let recordID = record.id
+    let expectedRevision = record.revision
+    var persistedMetadata = metadata
+    persistedMetadata["modifiedAt"] = String(Date().timeIntervalSince1970)
+    if let thumbnailName = record.thumbnailName { persistedMetadata["thumbnailName"] = thumbnailName }
+    editorSaveState = .saving
+    Task { [weak self, store] in
+      do {
+        _ = try await Task.detached(priority: .userInitiated) {
+          try store.updateMetadata(
+            recordID: recordID,
+            metadata: persistedMetadata,
+            expectedRevision: expectedRevision)
+        }.value
+        let saved = try await Task.detached(priority: .userInitiated) {
+          guard let value = try store.record(id: recordID) else {
+            throw ProductStoreError.missingRecord
+          }
+          return value
+        }.value
+        guard let self else { return }
+        self.replaceRecord(
+          Record(
+            domain: saved,
+            summary: self.documentsByRecordID[recordID]?.children().first?.text ?? "",
+            thumbnailName: self.record(withID: recordID)?.thumbnailName))
+        self.editorSaveState = .saved
+      } catch is RevisionError {
+        self?.editorSaveState = .conflict
+      } catch {
+        self?.editorSaveState = .failed
+        self?.editorError = String(describing: error)
+      }
+    }
+  }
+
   func importAttachment(from url: URL, for record: Record) {
     guard attachmentImportEnabled, let store, let assetStore,
       self.record(withID: record.id) != nil,
@@ -709,6 +917,25 @@ final class ShellModel {
       documents: loaded.map(\.1)
     )
     applyContentStateOverride()
+  }
+
+  private func applyPersistedEditor(
+    record domainRecord: SynoraDomain.Record,
+    document: BlockDocument
+  ) {
+    let current = record(withID: domainRecord.id)
+    let projected = Record(
+      domain: domainRecord,
+      summary: document.children().first?.text ?? "",
+      thumbnailName: current?.thumbnailName)
+    replaceRecord(projected)
+    documentsByRecordID[domainRecord.id] = document
+    editorSessions[domainRecord.id] = EditorSession(document: document)
+    editorTextByRecordID[domainRecord.id] = text(for: document)
+    editorTitleByRecordID[domainRecord.id] = projected.title
+    editorSelectionByRecordID[domainRecord.id] = NSRange(location: 0, length: 0)
+    editorError = nil
+    editorSaveState = .saved
   }
 
   private func apply(records: [Record], documents: [BlockDocument]?) {
@@ -994,6 +1221,12 @@ final class ShellModel {
       journalDate: record.journalDate,
       metadata: metadata
     )
+  }
+
+  private static let internalMetadataKeys: Set<String> = ["modifiedAt", "thumbnailName"]
+
+  private func editableMetadata(for record: Record) -> [String: String] {
+    record.metadata.filter { !Self.internalMetadataKeys.contains($0.key) }
   }
 
   private func makeDocument(text: String, basedOn document: BlockDocument?, recordID: UUID)

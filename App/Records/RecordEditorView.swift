@@ -4,6 +4,7 @@ import SynoraAssets
 import SynoraDesignSystem
 import SynoraDomain
 import SynoraEditorKit
+import SynoraStore
 import UniformTypeIdentifiers
 
 struct RecordEditorView: View {
@@ -15,6 +16,10 @@ struct RecordEditorView: View {
   @State private var findQuery = ""
   @State private var replaceQuery = ""
   @State private var exportError: String?
+  @State private var historyPresented = false
+  @State private var metadataPresented = false
+  @State private var templatePresented = false
+  @State private var metadataDraft = ""
 
   var body: some View {
     ScrollView {
@@ -53,6 +58,11 @@ struct RecordEditorView: View {
       HStack(spacing: SynoraSpacing.sm) {
         Label(record.kind.title, systemImage: record.kind == .note ? "note.text" : "book.closed")
         Text(record.modifiedAt, style: .date)
+        if !model.metadataText(for: record).isEmpty {
+          Text(model.metadataText(for: record).replacingOccurrences(of: "\n", with: " · "))
+            .lineLimit(1)
+            .accessibilityLabel("Metadata")
+        }
         Spacer(minLength: 0)
         Text(model.editorSaveState.title)
           .accessibilityLabel("Save status")
@@ -163,11 +173,72 @@ struct RecordEditorView: View {
     } message: {
       Text(exportError ?? "Unknown export error")
     }
+    .sheet(isPresented: $historyPresented) {
+      HistorySheet(
+        entries: model.history(for: record),
+        onRestore: { entry in
+          model.restoreHistory(entry, for: record)
+          historyPresented = false
+        })
+    }
+    .sheet(isPresented: $metadataPresented) {
+      MetadataEditorSheet(
+        initialText: metadataDraft,
+        onSave: { value in
+          model.updateMetadataText(value, for: record)
+          metadataPresented = false
+        },
+        onCancel: { metadataPresented = false })
+    }
+    .sheet(isPresented: $templatePresented) {
+      TemplateNameSheet(
+        onSave: { name in
+          model.saveCurrentAsTemplate(named: name, for: record)
+          templatePresented = false
+        },
+        onCancel: { templatePresented = false })
+    }
+    .task {
+      model.loadTemplates(for: record.kind)
+    }
   }
 
   private func editorControls(for record: Record) -> some View {
     ScrollView(.horizontal, showsIndicators: false) {
       HStack(spacing: SynoraSpacing.sm) {
+        Menu("Record", systemImage: "ellipsis.circle") {
+          Button("History", systemImage: "clock.arrow.circlepath") {
+            model.loadHistory(for: record)
+            historyPresented = true
+          }
+          .accessibilityIdentifier("editor-history")
+
+          Button("Edit metadata", systemImage: "tag") {
+            metadataDraft = model.metadataText(for: record)
+            metadataPresented = true
+          }
+          .accessibilityIdentifier("editor-metadata")
+
+          Menu("Template", systemImage: "doc.on.doc") {
+            let templates = model.templates(for: record.kind)
+            if templates.isEmpty {
+              Text("No saved templates")
+            } else {
+              ForEach(templates, id: \.id) { template in
+                Button(template.name) {
+                  model.applyTemplate(template, to: record)
+                }
+              }
+              Divider()
+            }
+            Button("Save current as template") {
+              templatePresented = true
+            }
+          }
+          .accessibilityIdentifier("editor-template-menu")
+        }
+        .accessibilityIdentifier("editor-record-menu")
+
         Menu("Block", systemImage: "text.alignleft") {
           ForEach(SlashCommand.availableCommands, id: \.self) { command in
             Button(command.title) { model.applySlashCommand(command, for: record) }
@@ -320,6 +391,113 @@ private struct StableRecordMediaStack: View, Equatable {
       onRemove: onRemove,
       onCaptionChange: onCaptionChange,
       onLayoutChange: onLayoutChange)
+  }
+}
+
+private struct HistorySheet: View {
+  let entries: [HistoryEntry]
+  let onRestore: (HistoryEntry) -> Void
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    NavigationStack {
+      Group {
+        if entries.isEmpty {
+          ContentUnavailableView("No history", systemImage: "clock.arrow.circlepath")
+        } else {
+          List(entries, id: \.sequence) { entry in
+            HStack(spacing: SynoraSpacing.md) {
+              VStack(alignment: .leading, spacing: SynoraSpacing.xs) {
+                Text(entry.title)
+                Text(entry.timestamp, style: .date)
+                  .font(SynoraTypography.metadata.font)
+                  .foregroundStyle(SynoraSemanticColor.inkSecondary.color)
+              }
+              Spacer(minLength: 0)
+              Text("Revision \(entry.revision)")
+                .font(SynoraTypography.metadata.font)
+                .foregroundStyle(SynoraSemanticColor.inkSecondary.color)
+              Button("Restore") { onRestore(entry) }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("history-entry-\(entry.sequence)")
+          }
+        }
+      }
+      .navigationTitle("History")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Done") { dismiss() }
+        }
+      }
+    }
+    .frame(minWidth: 520, minHeight: 360)
+  }
+}
+
+private struct MetadataEditorSheet: View {
+  let initialText: String
+  let onSave: (String) -> Void
+  let onCancel: () -> Void
+  @State private var text: String
+
+  init(initialText: String, onSave: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
+    self.initialText = initialText
+    self.onSave = onSave
+    self.onCancel = onCancel
+    _text = State(initialValue: initialText)
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: SynoraSpacing.md) {
+      Text("Metadata")
+        .font(SynoraTypography.sectionTitle.font)
+      Text("One key=value entry per line")
+        .font(SynoraTypography.metadata.font)
+        .foregroundStyle(SynoraSemanticColor.inkSecondary.color)
+      TextEditor(text: $text)
+        .font(SynoraTypography.body.font)
+        .frame(minWidth: 460, minHeight: 220)
+        .overlay {
+          RoundedRectangle(cornerRadius: SynoraRadius.control)
+            .stroke(SynoraSemanticColor.borderSubtle.color, lineWidth: 1)
+        }
+        .accessibilityIdentifier("metadata-editor")
+      HStack {
+        Spacer(minLength: 0)
+        Button("Cancel", action: onCancel)
+        Button("Save", action: { onSave(text) })
+          .keyboardShortcut(.defaultAction)
+          .accessibilityIdentifier("metadata-save")
+      }
+    }
+    .padding(SynoraSpacing.xl)
+  }
+}
+
+private struct TemplateNameSheet: View {
+  let onSave: (String) -> Void
+  let onCancel: () -> Void
+  @State private var name = ""
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: SynoraSpacing.md) {
+      Text("Save Template")
+        .font(SynoraTypography.sectionTitle.font)
+      TextField("Template name", text: $name)
+        .textFieldStyle(.roundedBorder)
+        .accessibilityIdentifier("template-name")
+      HStack {
+        Spacer(minLength: 0)
+        Button("Cancel", action: onCancel)
+        Button("Save", action: { onSave(name.trimmingCharacters(in: .whitespacesAndNewlines)) })
+          .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          .keyboardShortcut(.defaultAction)
+          .accessibilityIdentifier("template-save")
+      }
+    }
+    .padding(SynoraSpacing.xl)
+    .frame(minWidth: 420)
   }
 }
 

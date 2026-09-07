@@ -240,7 +240,8 @@ final class SynoraWikiUITests: XCTestCase {
     XCTAssertTrue(title.waitForExistence(timeout: 5))
     XCTAssertTrue(body.waitForExistence(timeout: 5))
     for identifier in [
-      "editor-block-menu", "editor-format-menu", "editor-undo", "editor-redo",
+      "editor-record-menu", "editor-block-menu", "editor-format-menu", "editor-structure-menu",
+      "editor-undo", "editor-redo",
       "editor-find", "editor-export-menu",
     ] {
       XCTAssertTrue(
