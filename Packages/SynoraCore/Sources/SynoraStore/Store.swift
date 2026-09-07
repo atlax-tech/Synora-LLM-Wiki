@@ -51,6 +51,7 @@ public enum ProductStoreError: Error, Equatable, Sendable {
   case invalidSnapshot
   case noUndo
   case noRedo
+  case templateWouldReplaceContent
 }
 
 public final class ProductStore: @unchecked Sendable {
@@ -111,7 +112,21 @@ public final class ProductStore: @unchecked Sendable {
           normalized_state BLOB NOT NULL,
           sha256 TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS templates (
+          id TEXT PRIMARY KEY NOT NULL,
+          kind TEXT NOT NULL,
+          payload BLOB NOT NULL
+        );
         PRAGMA journal_mode = WAL;
+        """)
+    }
+    migrator.registerMigration("p2-templates-v1") { db in
+      try db.execute(sql: """
+        CREATE TABLE IF NOT EXISTS templates (
+          id TEXT PRIMARY KEY NOT NULL,
+          kind TEXT NOT NULL,
+          payload BLOB NOT NULL
+        );
         """)
     }
     try migrator.migrate(pool)
@@ -142,6 +157,54 @@ public final class ProductStore: @unchecked Sendable {
 
   public func document(recordID: UUID) throws -> BlockDocument {
     try pool.read { db in try Self.loadDocument(db, recordID: recordID) }
+  }
+
+  public func saveTemplate(_ template: RecordTemplate) throws {
+    let validated = try template.validated()
+    try pool.write { db in
+      try db.execute(
+        sql: "INSERT INTO templates (id, kind, payload) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET kind = excluded.kind, payload = excluded.payload",
+        arguments: [validated.id.uuidString, validated.kind.rawValue, try Self.encode(validated)])
+    }
+  }
+
+  public func templates(kind: RecordKind? = nil) throws -> [RecordTemplate] {
+    try pool.read { db in
+      let rows: [Row]
+      if let kind {
+        rows = try Row.fetchAll(
+          db, sql: "SELECT payload FROM templates WHERE kind = ? ORDER BY id",
+          arguments: [kind.rawValue])
+      } else {
+        rows = try Row.fetchAll(db, sql: "SELECT payload FROM templates ORDER BY id")
+      }
+      return try rows.map { try Self.decode(RecordTemplate.self, from: $0["payload"] as Any) }
+    }
+  }
+
+  @discardableResult
+  public func applyTemplate(
+    _ template: RecordTemplate,
+    to recordID: UUID,
+    expectedRevision: Int,
+    replaceExisting: Bool = false,
+    operationID: UUID? = nil
+  ) throws -> StoreReceipt {
+    guard let current = try record(id: recordID) else { throw ProductStoreError.missingRecord }
+    let existing = try document(recordID: recordID)
+    guard replaceExisting || existing.blocks.isEmpty else {
+      throw ProductStoreError.templateWouldReplaceContent
+    }
+    let document = try Self.copyTemplate(template, to: recordID, ids: ids)
+    var record = current
+    record.kind = template.kind
+    record.metadata.merge(template.metadata) { _, replacement in replacement }
+    return try save(
+      record: record,
+      document: document,
+      expectedRevision: expectedRevision,
+      operationID: operationID
+    )
   }
 
   @discardableResult
@@ -418,6 +481,41 @@ public final class ProductStore: @unchecked Sendable {
       arguments: [recordID.uuidString])
     let blocks = try rows.map { try decode(Block.self, from: $0["payload"] as Any) }
     return try BlockDocument(recordID: recordID, blocks: blocks)
+  }
+
+  private static func copyTemplate(
+    _ template: RecordTemplate,
+    to recordID: UUID,
+    ids: any IDGenerator
+  ) throws -> BlockDocument {
+    var remap: [UUID: UUID] = [:]
+    for block in template.blocks { remap[block.id] = ids.next() }
+    let copied = template.blocks.map { block in
+      Block(
+        id: remap[block.id]!,
+        recordID: recordID,
+        position: block.position,
+        text: block.text,
+        revision: 0,
+        parentID: block.parentID.flatMap { remap[$0] },
+        type: block.type,
+        orderKey: block.orderKey,
+        attributes: block.attributes,
+        unknownFields: block.unknownFields,
+        content: copyContent(block.content)
+      )
+    }
+    return try BlockDocument(recordID: recordID, blocks: copied)
+  }
+
+  private static func copyContent(_ content: BlockContent?) -> BlockContent? {
+    guard let content else { return nil }
+    switch content {
+    case .assets(let placements):
+      return .assets(placements)
+    case .table, .link, .raw:
+      return content
+    }
   }
 
   private static func record(_ db: Database, id: UUID) throws -> DomainRecord? {

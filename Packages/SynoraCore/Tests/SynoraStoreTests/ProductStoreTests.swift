@@ -144,3 +144,44 @@ func productStoreWritesAutomaticSnapshotAtTheConfiguredInterval() throws {
   #expect(try store.latestSnapshot()?.upToSequence == 100)
   #expect(try store.latestSnapshot()?.isValid() == true)
 }
+
+@Test
+func productStoreTemplatesCopyTreeIDsAndRefuseSilentReplacement() throws {
+  let path = FileManager.default.temporaryDirectory
+    .appendingPathComponent("synora-product-\(UUID().uuidString)", isDirectory: true)
+    .appendingPathComponent("library.sqlite").path
+  defer { try? FileManager.default.removeItem(atPath: path) }
+  let store = try ProductStore(path: path)
+  let recordID = UUID()
+  let templateRecordID = UUID()
+  let templateParentID = UUID()
+  let templateChildID = UUID()
+  let template = RecordTemplate(
+    id: UUID(), name: "Daily", kind: .journal,
+    blocks: [
+      Block(id: templateParentID, recordID: templateRecordID, position: 0, text: "Today", type: .toggle),
+      Block(id: templateChildID, recordID: templateRecordID, position: 0, text: "Plan", parentID: templateParentID),
+    ], metadata: ["template": "daily"])
+  try store.saveTemplate(template)
+  #expect(try store.templates().count == 1)
+  _ = try store.save(
+    record: Record(id: recordID, title: "Empty"),
+    document: try BlockDocument(recordID: recordID),
+    expectedRevision: 0)
+  let receipt = try store.applyTemplate(template, to: recordID, expectedRevision: 1)
+  #expect(receipt.revision == 2)
+  let document = try store.document(recordID: recordID)
+  #expect(document.blocks.count == 2)
+  #expect(Set(document.blocks.map(\.id)).isDisjoint(with: Set(template.blocks.map(\.id))))
+  #expect(document.children().first?.type == .toggle)
+  #expect(document.children().first.flatMap { document.block(id: $0.id) } != nil)
+  #expect(try store.record(id: recordID)?.kind == .journal)
+
+  _ = try store.save(
+    record: Record(id: recordID, title: "Changed", kind: .journal),
+    document: document,
+    expectedRevision: 2)
+  #expect(throws: ProductStoreError.templateWouldReplaceContent) {
+    try store.applyTemplate(template, to: recordID, expectedRevision: 3)
+  }
+}

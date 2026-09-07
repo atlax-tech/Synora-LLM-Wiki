@@ -304,6 +304,34 @@ public struct Record: Codable, Hashable, Sendable {
   }
 }
 
+public struct RecordTemplate: Codable, Hashable, Sendable {
+  public let id: UUID
+  public var name: String
+  public var kind: RecordKind
+  public var blocks: [Block]
+  public var metadata: [String: String]
+
+  public init(
+    id: UUID = UUID(),
+    name: String,
+    kind: RecordKind = .note,
+    blocks: [Block] = [],
+    metadata: [String: String] = [:]
+  ) {
+    self.id = id
+    self.name = name
+    self.kind = kind
+    self.blocks = blocks
+    self.metadata = metadata
+  }
+
+  public func validated() throws -> Self {
+    let recordID = blocks.first?.recordID ?? UUID()
+    _ = try BlockDocument(recordID: recordID, blocks: blocks)
+    return self
+  }
+}
+
 public struct Block: Codable, Hashable, Sendable {
   public let id: UUID
   public let recordID: UUID
