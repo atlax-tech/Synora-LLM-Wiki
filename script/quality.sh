@@ -64,16 +64,29 @@ xcrun llvm-cov report "$test_binary" -instr-profile "$profdata" \
   | tee "$artifact_dir/swift-coverage.txt"
 line_coverage=$(awk '/^TOTAL[[:space:]]/ { gsub(/%/, "", $10); print $10 }' "$artifact_dir/swift-coverage.txt")
 [[ -n "$line_coverage" && "$line_coverage" != "-" ]]
-awk -v coverage="$line_coverage" 'BEGIN { exit !(coverage >= 85) }'
 region_coverage=$(awk '/^TOTAL[[:space:]]/ { gsub(/%/, "", $4); print $4 }' "$artifact_dir/swift-coverage.txt")
 [[ -n "$region_coverage" && "$region_coverage" != "-" ]]
-awk -v coverage="$region_coverage" 'BEGIN { exit !(coverage >= 75) }'
 print "coverage line=${line_coverage}% region=${region_coverage}%" | tee "$artifact_dir/coverage-status.txt"
 branch_coverage=$(awk '/^TOTAL[[:space:]]/ { gsub(/%/, "", $13); print $13 }' "$artifact_dir/swift-coverage.txt")
 if [[ "$branch_coverage" == "-" ]]; then
   print "coverage branches: unavailable in SwiftPM llvm-cov output" | tee -a "$artifact_dir/coverage-status.txt"
 else
-  awk -v coverage="$branch_coverage" 'BEGIN { exit !(coverage >= 75) }'
+  print "coverage branches=${branch_coverage}%" | tee -a "$artifact_dir/coverage-status.txt"
+fi
+
+# TESTING.md makes coverage thresholds a stage/version-exit requirement, not a
+# per-commit gate. Routine CI always records coverage; stage/version callers can
+# opt into the documented thresholds explicitly.
+if [[ "${SYNORA_ENFORCE_COVERAGE:-0}" == "1" ]]; then
+  awk -v coverage="$line_coverage" 'BEGIN { exit !(coverage >= 85) }'
+  awk -v coverage="$region_coverage" 'BEGIN { exit !(coverage >= 75) }'
+  if [[ "$branch_coverage" != "-" ]]; then
+    awk -v coverage="$branch_coverage" 'BEGIN { exit !(coverage >= 75) }'
+  fi
+  print "coverage thresholds enforced" | tee -a "$artifact_dir/coverage-status.txt"
+else
+  print "coverage thresholds reported only (set SYNORA_ENFORCE_COVERAGE=1 for stage/version enforcement)" \
+    | tee -a "$artifact_dir/coverage-status.txt"
 fi
 
 for configuration in Debug Release; do
