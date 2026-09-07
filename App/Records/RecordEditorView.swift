@@ -20,6 +20,7 @@ struct RecordEditorView: View {
   @State private var metadataPresented = false
   @State private var templatePresented = false
   @State private var metadataDraft = ""
+  @State private var importingRecord = false
 
   var body: some View {
     ScrollView {
@@ -168,6 +169,15 @@ struct RecordEditorView: View {
           for: record)
       }
     }
+    .fileImporter(
+      isPresented: $importingRecord,
+      allowedContentTypes: [.item],
+      allowsMultipleSelection: false
+    ) { result in
+      if case .success(let urls) = result, let url = urls.first {
+        model.importRecord(from: url)
+      }
+    }
     .alert("Export failed", isPresented: exportAlertBinding) {
       Button("OK", role: .cancel) { exportError = nil }
     } message: {
@@ -218,6 +228,11 @@ struct RecordEditorView: View {
             metadataPresented = true
           }
           .accessibilityIdentifier("editor-metadata")
+
+          Button("Import record", systemImage: "square.and.arrow.down") {
+            importingRecord = true
+          }
+          .accessibilityIdentifier("editor-import-record")
 
           Menu("Template", systemImage: "doc.on.doc") {
             let templates = model.templates(for: record.kind)

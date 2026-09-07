@@ -448,6 +448,96 @@ final class ShellModel {
     }
   }
 
+  func importRecord(from url: URL) {
+    guard let store, let assetStore else {
+      editorSaveState = .failed
+      return
+    }
+    let hasSecurityScope = url.startAccessingSecurityScopedResource()
+    let existingRecordIDs = Set(recordsByKind.values.flatMap { $0 }.map(\.id))
+    editorSaveState = .saving
+    Task { [weak self, store, assetStore] in
+      defer {
+        if hasSecurityScope { url.stopAccessingSecurityScopedResource() }
+      }
+      let temporaryDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("synora-record-import-\(UUID().uuidString)", isDirectory: true)
+      do {
+        let imported = try await Task.detached(priority: .userInitiated) {
+          let service = RecordExportService(assetStore: assetStore)
+          let ext = url.pathExtension.lowercased()
+          switch ext {
+          case "md", "markdown":
+            return try service.importMarkdown(
+              String(contentsOf: url, encoding: .utf8),
+              recordID: UUID())
+          case "html", "htm":
+            return try service.importHTML(
+              String(contentsOf: url, encoding: .utf8),
+              recordID: UUID())
+          case "synora":
+            return try service.importPackage(
+              from: url,
+              existingRecordIDs: existingRecordIDs)
+          default:
+            throw ExportError.invalidManifest
+          }
+        }.value
+        guard !existingRecordIDs.contains(imported.record.id) else {
+          throw ExportError.idConflict(imported.record.id)
+        }
+        let saved = try await Task.detached(priority: .userInitiated) {
+          try FileManager.default.createDirectory(
+            at: temporaryDirectory,
+            withIntermediateDirectories: true)
+          var importedAssets: [Asset] = []
+          for asset in imported.assets {
+            let path = "assets/\(asset.contentHash)"
+            guard let data = imported.assetFiles[path] else {
+              throw ExportError.missingAsset(asset.id)
+            }
+            let source = temporaryDirectory.appendingPathComponent(asset.contentHash)
+            try data.write(to: source, options: .atomic)
+            let stored = try await assetStore.importFile(at: source, assetID: asset.id)
+            guard stored.contentHash == asset.contentHash, stored.byteCount == asset.byteCount else {
+              throw ExportError.checksumMismatch(path)
+            }
+            let persisted = Asset(
+              id: asset.id,
+              contentHash: stored.contentHash,
+              byteCount: stored.byteCount,
+              mediaType: asset.mediaType,
+              originalFilename: asset.originalFilename)
+            try store.saveAsset(persisted)
+            importedAssets.append(persisted)
+          }
+          var record = imported.record
+          record.revision = 0
+          _ = try store.save(record: record, document: imported.document, expectedRevision: 0)
+          guard let savedRecord = try store.record(id: record.id) else {
+            throw ProductStoreError.missingRecord
+          }
+          return (savedRecord, imported.document, importedAssets)
+        }.value
+        guard let self else { return }
+        for asset in saved.2 { self.assetsByID[asset.id] = asset }
+        self.append(
+          record: Record(domain: saved.0, summary: saved.1.children().first?.text ?? ""),
+          document: saved.1)
+        self.selectedRecordKind = saved.0.kind == .journal ? .journal : .note
+        self.selectedRecordIDs[self.selectedRecordKind] = saved.0.id
+        self.editorSaveState = .saved
+        try? FileManager.default.removeItem(at: temporaryDirectory)
+      } catch is CancellationError {
+        try? FileManager.default.removeItem(at: temporaryDirectory)
+      } catch {
+        try? FileManager.default.removeItem(at: temporaryDirectory)
+        self?.editorSaveState = .failed
+        self?.editorError = String(describing: error)
+      }
+    }
+  }
+
   func setEditorTitle(_ title: String, for record: Record) {
     ensureEditorState(for: record)
     guard editorTitleByRecordID[record.id] != title else { return }
