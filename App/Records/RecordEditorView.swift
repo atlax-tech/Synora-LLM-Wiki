@@ -171,7 +171,7 @@ struct RecordEditorView: View {
     }
     .fileImporter(
       isPresented: $importingRecord,
-      allowedContentTypes: [.item],
+      allowedContentTypes: [.item, .folder],
       allowsMultipleSelection: false
     ) { result in
       if case .success(let urls) = result, let url = urls.first {
@@ -309,6 +309,7 @@ struct RecordEditorView: View {
         Menu("Export", systemImage: "square.and.arrow.up") {
           ForEach(RecordExportFormat.allCases) { format in
             Button(format.title) { export(format, record: record) }
+              .accessibilityIdentifier("editor-export-\(format.rawValue)")
           }
         }
         .accessibilityIdentifier("editor-export-menu")
@@ -345,11 +346,17 @@ struct RecordEditorView: View {
     panel.allowedContentTypes = [UTType(filenameExtension: format.fileExtension) ?? .data]
     panel.nameFieldStringValue = "\(model.editorTitle(for: record)).\(format.fileExtension)"
     panel.canCreateDirectories = true
-    guard panel.runModal() == .OK, let destinationURL = panel.url else { return }
-    do {
-      try model.export(format, record: record, to: destinationURL)
-    } catch {
-      exportError = String(describing: error)
+    guard let window = NSApp.keyWindow ?? NSApp.windows.first(where: { $0.isVisible }) else {
+      exportError = "No active window"
+      return
+    }
+    panel.beginSheetModal(for: window) { response in
+      guard response == .OK, let destinationURL = panel.url else { return }
+      do {
+        try model.export(format, record: record, to: destinationURL)
+      } catch {
+        exportError = String(describing: error)
+      }
     }
   }
 
