@@ -9,6 +9,7 @@ let package = Package(
     .library(name: "SynoraPlatform", targets: ["SynoraPlatform"]),
     .library(name: "SynoraStoreProbe", targets: ["SynoraStoreProbe"]),
     .library(name: "SynoraStore", targets: ["SynoraStore"]),
+    .library(name: "SynoraEditorKit", targets: ["SynoraEditorKit"]),
     .library(name: "SynoraSkillProbe", targets: ["SynoraSkillProbe"]),
     .library(name: "SynoraBenchmark", targets: ["SynoraBenchmark"]),
     .library(name: "SynoraDesignSystem", targets: ["SynoraDesignSystem"]),
@@ -29,6 +30,7 @@ let package = Package(
       name: "SynoraStore",
       dependencies: ["SynoraDomain", .product(name: "GRDB", package: "GRDB.swift")]
     ),
+    .target(name: "SynoraEditorKit", dependencies: ["SynoraDomain"]),
     .target(name: "CWasmtimeShim", publicHeadersPath: "include"),
     .target(name: "SynoraSkillProbe", dependencies: ["CWasmtimeShim"]),
     .target(name: "SynoraBenchmark"),
@@ -40,6 +42,7 @@ let package = Package(
     .testTarget(name: "SynoraPlatformTests", dependencies: ["SynoraPlatform"]),
     .testTarget(name: "SynoraStoreProbeTests", dependencies: ["SynoraStoreProbe"]),
     .testTarget(name: "SynoraStoreTests", dependencies: ["SynoraStore"]),
+    .testTarget(name: "SynoraEditorKitTests", dependencies: ["SynoraEditorKit"]),
     .testTarget(name: "SynoraStoreHeavyTests", dependencies: ["SynoraStoreProbe"]),
     .testTarget(name: "SynoraSkillProbeTests", dependencies: ["SynoraSkillProbe"]),
     .testTarget(name: "SynoraBenchmarkTests", dependencies: ["SynoraBenchmark"]),
