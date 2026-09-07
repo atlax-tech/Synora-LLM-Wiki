@@ -85,6 +85,31 @@ func productStoreUndoRedoUsesNewAuditedTransactions() throws {
 }
 
 @Test
+func productStoreUndoRedoRebuildsAcrossConsecutiveEditsAndReopen() throws {
+  let path = FileManager.default.temporaryDirectory
+    .appendingPathComponent("synora-product-\(UUID().uuidString)", isDirectory: true)
+    .appendingPathComponent("library.sqlite").path
+  defer { try? FileManager.default.removeItem(atPath: path) }
+  let store = try ProductStore(path: path)
+  let recordID = UUID()
+  let document = try BlockDocument(recordID: recordID)
+  _ = try store.save(record: Record(id: recordID, title: "one"), document: document, expectedRevision: 0)
+  _ = try store.save(record: Record(id: recordID, title: "two"), document: document, expectedRevision: 1)
+  _ = try store.save(record: Record(id: recordID, title: "three"), document: document, expectedRevision: 2)
+
+  _ = try store.undo(recordID: recordID)
+  _ = try store.undo(recordID: recordID)
+  #expect(try store.record(id: recordID)?.title == "one")
+
+  let reopened = try ProductStore(path: path)
+  _ = try reopened.redo(recordID: recordID)
+  #expect(try reopened.record(id: recordID)?.title == "two")
+  _ = try reopened.save(
+    record: Record(id: recordID, title: "branch"), document: document, expectedRevision: 6)
+  #expect(throws: ProductStoreError.noRedo) { try reopened.redo(recordID: recordID) }
+}
+
+@Test
 func productStoreSnapshotIsValid() throws {
   let path = FileManager.default.temporaryDirectory
     .appendingPathComponent("synora-product-\(UUID().uuidString)", isDirectory: true)
@@ -257,4 +282,86 @@ func productStoreCommitsAssetPlacementAtomicallyAndKeepsAssetForHistory() throws
       ]),
       expectedRevision: 2)
   }
+}
+
+@Test
+func autosaveFlushPersistsPendingChangeAndClearsIt() async throws {
+  let path = FileManager.default.temporaryDirectory
+    .appendingPathComponent("synora-autosave-\(UUID().uuidString)", isDirectory: true)
+    .appendingPathComponent("library.sqlite").path
+  defer { try? FileManager.default.removeItem(atPath: path) }
+  let store = try ProductStore(path: path)
+  let recordID = UUID()
+  let document = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: UUID(), recordID: recordID, position: 0, text: "本地草稿")
+  ])
+  let autosave = AutosaveCoordinator(store: store)
+  let result = await autosave.saveNow(
+    record: Record(id: recordID, title: "草稿"),
+    document: document,
+    expectedRevision: 0,
+    operationID: UUID())
+  guard case .saved(let receipt) = result else {
+    Issue.record("expected autosave to save, got \(result)")
+    return
+  }
+  #expect(receipt.revision == 1)
+  #expect(await autosave.pendingRecordIDs().isEmpty)
+  #expect(try store.record(id: recordID)?.title == "草稿")
+  #expect(try store.document(recordID: recordID) == document)
+}
+
+@Test
+func autosaveConflictKeepsLocalDraftAndExposesSavedVersion() async throws {
+  let path = FileManager.default.temporaryDirectory
+    .appendingPathComponent("synora-autosave-\(UUID().uuidString)", isDirectory: true)
+    .appendingPathComponent("library.sqlite").path
+  defer { try? FileManager.default.removeItem(atPath: path) }
+  let store = try ProductStore(path: path)
+  let recordID = UUID()
+  let savedDocument = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: UUID(), recordID: recordID, position: 0, text: "已保存")
+  ])
+  _ = try store.save(
+    record: Record(id: recordID, title: "已保存"),
+    document: savedDocument,
+    expectedRevision: 0)
+  let localDocument = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: UUID(), recordID: recordID, position: 0, text: "本地未提交")
+  ])
+  let autosave = AutosaveCoordinator(store: store)
+  let result = await autosave.saveNow(
+    record: Record(id: recordID, title: "本地未提交"),
+    document: localDocument,
+    expectedRevision: 0)
+  guard case .conflict(let conflict) = result else {
+    Issue.record("expected revision conflict, got \(result)")
+    return
+  }
+  #expect(conflict.expectedRevision == 0)
+  #expect(conflict.actualRevision == 1)
+  #expect(conflict.localRecord.title == "本地未提交")
+  #expect(conflict.savedRecord?.title == "已保存")
+  #expect(conflict.savedDocument == savedDocument)
+  #expect(await autosave.pendingRecordIDs() == [recordID])
+  await autosave.cancel(recordID: recordID)
+}
+
+@Test
+func autosaveScheduleCanBeCancelledBeforeFlush() async throws {
+  let path = FileManager.default.temporaryDirectory
+    .appendingPathComponent("synora-autosave-\(UUID().uuidString)", isDirectory: true)
+    .appendingPathComponent("library.sqlite").path
+  defer { try? FileManager.default.removeItem(atPath: path) }
+  let store = try ProductStore(path: path)
+  let recordID = UUID()
+  let autosave = AutosaveCoordinator(store: store)
+  await autosave.schedule(
+    record: Record(id: recordID, title: "取消"),
+    document: try BlockDocument(recordID: recordID),
+    expectedRevision: 0,
+    delayNanoseconds: 1_000_000_000)
+  await autosave.cancel(recordID: recordID)
+  #expect(await autosave.flush().isEmpty)
+  #expect(try store.record(id: recordID) == nil)
 }

@@ -56,11 +56,11 @@ public enum ProductStoreError: Error, Equatable, Sendable {
 }
 
 public final class ProductStore: @unchecked Sendable {
+  private typealias ChangePayload = ChangeSet
   private let pool: DatabasePool
   private let clock: any Clock
   private let ids: any IDGenerator
-  private var redoStack: [UUID: [ChangePayload]] = [:]
-  private let redoLock = NSLock()
+  private let historyLock = NSLock()
 
   public init(
     path: String,
@@ -318,7 +318,9 @@ public final class ProductStore: @unchecked Sendable {
     expectedRevision: Int,
     operationID: UUID?,
     asset: Asset?,
-    requestHash: String?
+    requestHash: String?,
+    operationKind: String = "document.save",
+    journalPayload: Data? = nil
   ) throws -> StoreReceipt {
     guard record.id == document.recordID else { throw ProductStoreError.invalidDocument }
     try document.validate()
@@ -350,19 +352,21 @@ public final class ProductStore: @unchecked Sendable {
         beforeDocument: previousRecord == nil ? nil : previousDocument,
         afterRecord: persisted,
         afterDocument: document)
-      let payload = try Self.encode(change)
+      let payload: Data
+      if let journalPayload {
+        payload = journalPayload
+      } else {
+        payload = try Self.encode(change)
+      }
       return try self.appendOperation(
         db, operationID: operationID, entityID: record.id, revision: persisted.revision,
-        kind: "document.save", payload: payload, requestHash: requestHash
+        kind: operationKind, payload: payload, requestHash: requestHash
       ) { receipt in
         if let asset { try Self.upsertAsset(asset, db: db) }
         try Self.writeProjection(persisted, document: document, db: db)
         return receipt
       }
     }
-    redoLock.lock()
-    redoStack[record.id] = nil
-    redoLock.unlock()
     return result
   }
 
@@ -386,7 +390,7 @@ public final class ProductStore: @unchecked Sendable {
   public func history(recordID: UUID) throws -> [HistoryEntry] {
     try pool.read { db in
       let rows = try Row.fetchAll(
-        db, sql: "SELECT sequence, timestamp, entity_revision, payload FROM operations WHERE entity_id = ? AND kind = 'document.save' ORDER BY sequence DESC",
+        db, sql: "SELECT sequence, timestamp, entity_revision, payload FROM operations WHERE entity_id = ? AND kind IN ('document.save', 'document.restore') ORDER BY sequence DESC",
         arguments: [recordID.uuidString])
       return try rows.map { row in
         let payload: Data = row["payload"]
@@ -402,7 +406,7 @@ public final class ProductStore: @unchecked Sendable {
     try pool.read { db in
       guard let row = try Row.fetchOne(
         db,
-        sql: "SELECT sequence, timestamp, entity_revision, payload FROM operations WHERE entity_id = ? AND kind = 'document.save' AND sequence = ?",
+        sql: "SELECT sequence, timestamp, entity_revision, payload FROM operations WHERE entity_id = ? AND kind IN ('document.save', 'document.restore') AND sequence = ?",
         arguments: [recordID.uuidString, sequence]),
         let payload: Data = row["payload"]
       else { return nil }
@@ -427,35 +431,45 @@ public final class ProductStore: @unchecked Sendable {
       record: version.record,
       document: version.document,
       expectedRevision: current.revision,
-      operationID: operationID
+      operationID: operationID,
+      asset: nil,
+      requestHash: nil,
+      operationKind: "document.restore"
     )
   }
 
   @discardableResult
   public func undo(recordID: UUID, operationID: UUID? = nil) throws -> StoreReceipt {
-    guard let latest = try latestChange(recordID: recordID), let before = latest.beforeRecord,
+    historyLock.lock()
+    defer { historyLock.unlock() }
+    let stacks = try actionStacks(recordID: recordID)
+    guard let latest = stacks.undo.last, let before = latest.beforeRecord,
       let beforeDocument = latest.beforeDocument, let current = try record(id: recordID)
     else { throw ProductStoreError.noUndo }
-    let receipt = try save(
+    return try save(
       record: before, document: beforeDocument, expectedRevision: current.revision,
-      operationID: operationID)
-    redoLock.lock()
-    redoStack[recordID, default: []].append(latest)
-    redoLock.unlock()
-    return receipt
+      operationID: operationID,
+      asset: nil,
+      requestHash: nil,
+      operationKind: "document.undo",
+      journalPayload: try Self.encode(latest))
   }
 
   @discardableResult
   public func redo(recordID: UUID, operationID: UUID? = nil) throws -> StoreReceipt {
-    redoLock.lock()
-    let change = redoStack[recordID]?.popLast()
-    if redoStack[recordID]?.isEmpty == true { redoStack[recordID] = nil }
-    redoLock.unlock()
-    guard let change, change.afterRecord.id == recordID, let current = try record(id: recordID)
+    historyLock.lock()
+    defer { historyLock.unlock() }
+    let stacks = try actionStacks(recordID: recordID)
+    guard let change = stacks.redo.last, change.afterRecord.id == recordID,
+      let current = try record(id: recordID)
     else { throw ProductStoreError.noRedo }
     return try save(
       record: change.afterRecord, document: change.afterDocument, expectedRevision: current.revision,
-      operationID: operationID)
+      operationID: operationID,
+      asset: nil,
+      requestHash: nil,
+      operationKind: "document.redo",
+      journalPayload: try Self.encode(change))
   }
 
   public func operationCount() throws -> Int {
@@ -523,13 +537,38 @@ public final class ProductStore: @unchecked Sendable {
     }
   }
 
-  private func latestChange(recordID: UUID) throws -> ChangePayload? {
+  private func actionStacks(recordID: UUID) throws -> (undo: [ChangePayload], redo: [ChangePayload]) {
     try pool.read { db in
-      guard let row = try Row.fetchOne(
-        db, sql: "SELECT payload FROM operations WHERE entity_id = ? AND kind = 'document.save' ORDER BY sequence DESC LIMIT 1",
+      let rows = try Row.fetchAll(
+        db,
+        sql: "SELECT kind, payload FROM operations WHERE entity_id = ? ORDER BY sequence",
         arguments: [recordID.uuidString])
-      else { return nil }
-      return try Self.decode(ChangePayload.self, from: row["payload"] as Any)
+      var undo: [ChangePayload] = []
+      var redo: [ChangePayload] = []
+      for row in rows {
+        let kind: String = row["kind"]
+        switch kind {
+        case "document.save", "document.restore":
+          let change = try Self.decode(ChangePayload.self, from: row["payload"] as Any)
+          undo.append(change)
+          redo.removeAll()
+        case "document.undo":
+          let change = try Self.decode(ChangePayload.self, from: row["payload"] as Any)
+          guard undo.last == change else { throw ProductStoreError.invalidOperation }
+          _ = undo.popLast()
+          redo.append(change)
+        case "document.redo":
+          let change = try Self.decode(ChangePayload.self, from: row["payload"] as Any)
+          guard redo.last == change else { throw ProductStoreError.invalidOperation }
+          _ = redo.popLast()
+          undo.append(change)
+        default:
+          continue
+        }
+      }
+      // ponytail: replay the immutable log instead of another persistence table; add indexed
+      // cursor state only if profiling shows long undo histories are a bottleneck.
+      return (undo, redo)
     }
   }
 
@@ -573,13 +612,6 @@ public final class ProductStore: @unchecked Sendable {
     let record: DomainRecord
     let document: BlockDocument
     let expectedRevision: Int
-  }
-
-  private struct ChangePayload: Codable, Hashable, Sendable {
-    let beforeRecord: DomainRecord?
-    let beforeDocument: BlockDocument?
-    let afterRecord: DomainRecord
-    let afterDocument: BlockDocument
   }
 
   private static func loadDocument(_ db: Database, recordID: UUID) throws -> BlockDocument {

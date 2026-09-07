@@ -1561,6 +1561,28 @@ public struct BlockDocument: Codable, Hashable, Sendable {
   }
 }
 
+/// One atomic document transition shared by editing, history, undo, and restore.
+public struct ChangeSet: Codable, Hashable, Sendable {
+  public let recordID: UUID
+  public let beforeRecord: Record?
+  public let beforeDocument: BlockDocument?
+  public let afterRecord: Record
+  public let afterDocument: BlockDocument
+
+  public init(
+    beforeRecord: Record?,
+    beforeDocument: BlockDocument?,
+    afterRecord: Record,
+    afterDocument: BlockDocument
+  ) {
+    self.recordID = afterRecord.id
+    self.beforeRecord = beforeRecord
+    self.beforeDocument = beforeDocument
+    self.afterRecord = afterRecord
+    self.afterDocument = afterDocument
+  }
+}
+
 public struct Asset: Codable, Hashable, Sendable {
   public let id: UUID
   public let contentHash: String
