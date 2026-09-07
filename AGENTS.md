@@ -1,7 +1,6 @@
 # Synora Wiki
 
 个人、开源、原生 macOS 记录与知识库；完整产品范围见 PRODUCT。
-P0 正在执行，当前出口为 `CHANGES_REQUIRED`；P1–P9 未启动。已有原生工程与专用风险探针，不构成产品业务功能完成。
 
 付费 Apple 服务与同步范围见 [PRODUCT §5.3](docs/PRODUCT.md#53-当前服务与交付边界) 和 [ADR-H003](docs/decisions/ADR-H003-free-local-services.md)：不作为 P0 或后续阶段 blocker；保留本地功能与恢复质量门。
 
@@ -33,6 +32,8 @@ Ponytail 约束实现复杂度，不改变用户批准的功能范围。在当�
 
 工程治理使用本机安装的 Harness Armor：初始化调用 `harness-build`，后续治理变更调用 `harness-update`，只读检查调用 `harness-check`。不得在 Harness-only 任务里编写业务代码。
 
+## 开发日志更新
+每个阶段开始前用户都会根据SPEC.md和PLAN.md制定执行计划，计划会精确到每一步怎么执行。每一步完成就是一次小步提交的节点。每到小步提交节点之前更新开发日志。
 开发日志遵守 [编写规范](docs/development-log/README.md)。
 
 ## 边界与证据
