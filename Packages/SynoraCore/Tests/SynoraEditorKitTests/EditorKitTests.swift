@@ -368,3 +368,27 @@ func pastePreservesSafeRichTextSanitizesHTMLAndKeepsFilesForAssetPipeline() thro
         range: NSRange(location: 0, length: 4), style: .bold)])))
   }
 }
+
+@Test
+func assetPlacementCommandsCommitAndUndoAsOneEdit() throws {
+  let recordID = UUID()
+  let blockID = UUID()
+  let assetID = UUID()
+  let document = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: blockID, recordID: recordID, position: 0, text: "", type: .image)
+  ])
+  var session = EditorSession(document: document)
+  _ = try session.placeAsset(
+    AssetPlacement(assetID: assetID, caption: "封面"), in: blockID)
+  #expect(session.document.assetPlacements(in: blockID) == [
+    AssetPlacement(assetID: assetID, caption: "封面")
+  ])
+  _ = try session.undo()
+  #expect(session.document == document)
+
+  _ = try session.placeAsset(AssetPlacement(assetID: assetID), in: blockID)
+  _ = try session.removeAsset(assetID, from: blockID)
+  #expect(session.document.assetPlacements(in: blockID).isEmpty)
+  _ = try session.undo()
+  #expect(session.document.assetPlacements(in: blockID).map(\.assetID) == [assetID])
+}

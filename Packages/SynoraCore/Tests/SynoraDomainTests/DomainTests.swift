@@ -177,6 +177,39 @@ func structuredBlockContentRoundTripsAndTableEditsStayRectangular() throws {
 }
 
 @Test
+func assetPlacementsStayOnMediaBlocksAndKeepOrder() throws {
+  let recordID = UUID()
+  let blockID = UUID()
+  let firstAssetID = UUID()
+  let secondAssetID = UUID()
+  let document = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: blockID, recordID: recordID, position: 0, text: "", type: .gallery)
+  ])
+
+  let first = try document.placingAsset(
+    AssetPlacement(assetID: firstAssetID, caption: "one"), in: blockID)
+  let second = try first.placingAsset(
+    AssetPlacement(assetID: secondAssetID, caption: "two"), in: blockID)
+  #expect(second.assetPlacements(in: blockID).map(\.assetID) == [firstAssetID, secondAssetID])
+  #expect(second.assetPlacements(in: blockID).map(\.order) == [0, 1])
+  let removed = try second.removingAsset(firstAssetID, from: blockID)
+  #expect(removed.assetPlacements(in: blockID).map(\.assetID) == [secondAssetID])
+  let paragraph = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: blockID, recordID: recordID, position: 0, text: "text")
+  ])
+  #expect(throws: BlockTreeError.invalidChild(blockID)) {
+    try paragraph.placingAsset(AssetPlacement(assetID: firstAssetID), in: blockID)
+  }
+  #expect(throws: BlockTreeError.invalidChild(blockID)) {
+    try BlockDocument(recordID: recordID, blocks: [
+      Block(
+        id: blockID, recordID: recordID, position: 0, text: "text",
+        content: .assets([AssetPlacement(assetID: firstAssetID)]))
+    ])
+  }
+}
+
+@Test
 func advancedBlocksEditTablesAndKeepContainerRules() throws {
   let recordID = UUID()
   let tableID = UUID()

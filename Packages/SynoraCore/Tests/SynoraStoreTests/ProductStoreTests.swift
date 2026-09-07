@@ -202,3 +202,59 @@ func productStorePersistsAssetMetadataAlongsideTheDocumentStore() throws {
   let reopened = try ProductStore(path: path)
   #expect(try reopened.asset(id: asset.id) == asset)
 }
+
+@Test
+func productStoreCommitsAssetPlacementAtomicallyAndKeepsAssetForHistory() throws {
+  let path = FileManager.default.temporaryDirectory
+    .appendingPathComponent("synora-product-\(UUID().uuidString)", isDirectory: true)
+    .appendingPathComponent("library.sqlite").path
+  defer { try? FileManager.default.removeItem(atPath: path) }
+  let store = try ProductStore(path: path)
+  let recordID = UUID()
+  let blockID = UUID()
+  let asset = Asset(
+    id: UUID(), contentHash: String(repeating: "a", count: 64), byteCount: 4,
+    mediaType: "public.image", originalFilename: "photo.png")
+  let document = try BlockDocument(recordID: recordID, blocks: [
+    Block(
+      id: blockID, recordID: recordID, position: 0, text: "", type: .image,
+      content: .assets([AssetPlacement(assetID: asset.id)]))
+  ])
+  _ = try store.save(
+    record: Record(id: recordID, title: "媒体"),
+    document: try BlockDocument(recordID: recordID),
+    expectedRevision: 0)
+  let operationID = UUID()
+  let receipt = try store.save(
+    asset: asset,
+    record: Record(id: recordID, title: "媒体"),
+    document: document,
+    expectedRevision: 1,
+    operationID: operationID)
+  #expect(try store.save(
+    asset: asset,
+    record: Record(id: recordID, title: "媒体"),
+    document: document,
+    expectedRevision: 1,
+    operationID: operationID) == receipt)
+  #expect(try store.asset(id: asset.id) == asset)
+  #expect(try store.document(recordID: recordID) == document)
+  #expect(try store.operationCount() == 2)
+
+  _ = try store.undo(recordID: recordID)
+  #expect(try store.document(recordID: recordID).blocks.isEmpty)
+  #expect(try store.asset(id: asset.id) == asset)
+  #expect(throws: ProductStoreError.assetConflict) {
+    try store.saveAsset(Asset(
+      id: asset.id, contentHash: String(repeating: "b", count: 64), byteCount: 4))
+  }
+  #expect(throws: ProductStoreError.invalidDocument) {
+    try store.save(
+      asset: asset,
+      record: Record(id: recordID, title: "媒体"),
+      document: try BlockDocument(recordID: recordID, blocks: [
+        Block(id: blockID, recordID: recordID, position: 0, text: "", type: .image)
+      ]),
+      expectedRevision: 2)
+  }
+}

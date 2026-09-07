@@ -164,6 +164,15 @@ public enum BlockType: Codable, Hashable, Sendable {
     }
   }
 
+  public var supportsAssetPlacements: Bool {
+    switch self {
+    case .image, .gallery, .video, .audio, .pdf, .file:
+      true
+    default:
+      false
+    }
+  }
+
   public var accessibilityName: String {
     switch self {
     case .paragraph: "Paragraph"
@@ -680,6 +689,16 @@ public struct BlockDocument: Codable, Hashable, Sendable {
           attribute.range.length <= textLength - attribute.range.location
         else { throw BlockTreeError.invalidRange }
       }
+      switch block.content {
+      case .table? where block.type != .table:
+        throw BlockTreeError.invalidChild(block.id)
+      case .assets? where !block.type.supportsAssetPlacements:
+        throw BlockTreeError.invalidChild(block.id)
+      case .link? where block.type != .link:
+        throw BlockTreeError.invalidChild(block.id)
+      default:
+        break
+      }
     }
     for block in blocks {
       guard block.parentID != block.id else { throw BlockTreeError.cycle(block.id) }
@@ -785,6 +804,55 @@ public struct BlockDocument: Codable, Hashable, Sendable {
     for id: UUID
   ) throws -> Self {
     try settingInlineAttributes(inlineAttributes, for: id)
+  }
+
+  public func assetPlacements(in id: UUID) -> [AssetPlacement] {
+    guard let block = block(id: id), case .assets(let placements)? = block.content else {
+      return []
+    }
+    return placements.sorted { ($0.order, $0.assetID.uuidString) < ($1.order, $1.assetID.uuidString) }
+  }
+
+  public func settingAssetPlacements(
+    _ placements: [AssetPlacement],
+    for id: UUID
+  ) throws -> Self {
+    guard let source = block(id: id), source.type.supportsAssetPlacements else {
+      throw BlockTreeError.invalidChild(id)
+    }
+    var copy = self
+    guard let index = copy.blocks.firstIndex(where: { $0.id == id }) else {
+      throw BlockTreeError.missingParent(id)
+    }
+    copy.blocks[index].content = .assets(placements)
+    try copy.validate()
+    return copy
+  }
+
+  public func placingAsset(
+    _ placement: AssetPlacement,
+    in id: UUID
+  ) throws -> Self {
+    var placements = assetPlacements(in: id)
+    let existingOrder = placements.first { $0.assetID == placement.assetID }?.order
+    placements.removeAll { $0.assetID == placement.assetID }
+    let order = existingOrder ?? (placement.order == 0 && !placements.isEmpty
+      ? (placements.map(\.order).max() ?? -1) + 1
+      : placement.order)
+    placements.append(AssetPlacement(
+      assetID: placement.assetID,
+      order: order,
+      caption: placement.caption,
+      crop: placement.crop))
+    return try settingAssetPlacements(placements, for: id)
+  }
+
+  public func removingAsset(
+    _ assetID: UUID,
+    from id: UUID
+  ) throws -> Self {
+    let placements = assetPlacements(in: id).filter { $0.assetID != assetID }
+    return try settingAssetPlacements(placements, for: id)
   }
 
   public func editingTableCell(

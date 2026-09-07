@@ -266,6 +266,7 @@ public enum EditorCommand: Hashable, Sendable {
   case removeTableColumn(at: Int)
   case toggleCollapse
   case setCalloutStyle(CalloutStyle)
+  case setAssetPlacements([AssetPlacement])
 }
 
 public enum EditorError: Error, Equatable, Sendable {
@@ -804,6 +805,8 @@ public struct EditorSession: Sendable {
       next = try document.togglingCollapse(id: blockID)
     case .setCalloutStyle(let style):
       next = try document.settingCalloutStyle(style, for: blockID)
+    case .setAssetPlacements(let placements):
+      next = try document.settingAssetPlacements(placements, for: blockID)
     }
     return commit(next, focus: focusAfter, collapsedFocus: collapsedFocusAfter)
   }
@@ -1024,6 +1027,25 @@ public struct EditorSession: Sendable {
     in blockID: UUID
   ) throws -> BlockDocument {
     try execute(.setCalloutStyle(style), blockID: blockID)
+  }
+
+  @discardableResult
+  public mutating func placeAsset(
+    _ placement: AssetPlacement,
+    in blockID: UUID
+  ) throws -> BlockDocument {
+    try execute(
+      .setAssetPlacements(document.placingAsset(placement, in: blockID).assetPlacements(in: blockID)),
+      blockID: blockID)
+  }
+
+  @discardableResult
+  public mutating func removeAsset(
+    _ assetID: UUID,
+    from blockID: UUID
+  ) throws -> BlockDocument {
+    let placements = try document.removingAsset(assetID, from: blockID).assetPlacements(in: blockID)
+    return try execute(.setAssetPlacements(placements), blockID: blockID)
   }
 
   @discardableResult

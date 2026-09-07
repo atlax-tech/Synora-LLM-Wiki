@@ -52,6 +52,7 @@ public enum ProductStoreError: Error, Equatable, Sendable {
   case noUndo
   case noRedo
   case templateWouldReplaceContent
+  case assetConflict
 }
 
 public final class ProductStore: @unchecked Sendable {
@@ -179,10 +180,31 @@ public final class ProductStore: @unchecked Sendable {
 
   public func saveAsset(_ asset: Asset) throws {
     try pool.write { db in
-      try db.execute(
-        sql: "INSERT INTO assets (id, content_hash, byte_count, media_type, original_filename) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET content_hash = excluded.content_hash, byte_count = excluded.byte_count, media_type = excluded.media_type, original_filename = excluded.original_filename",
-        arguments: [asset.id.uuidString, asset.contentHash, asset.byteCount, asset.mediaType, asset.originalFilename])
+      try Self.upsertAsset(asset, db: db)
     }
+  }
+
+  @discardableResult
+  public func saveAsset(
+    _ asset: Asset,
+    record: DomainRecord,
+    document: BlockDocument,
+    expectedRevision: Int,
+    operationID: UUID? = nil
+  ) throws -> StoreReceipt {
+    guard Self.references(asset.id, in: document) else {
+      throw ProductStoreError.invalidDocument
+    }
+    var request = try Self.encode(Request(
+      record: record, document: document, expectedRevision: expectedRevision))
+    request.append(try Self.encode(asset))
+    return try save(
+      record: record,
+      document: document,
+      expectedRevision: expectedRevision,
+      operationID: operationID,
+      asset: asset,
+      requestHash: Self.fingerprint(request))
   }
 
   public func asset(id: UUID) throws -> Asset? {
@@ -265,11 +287,44 @@ public final class ProductStore: @unchecked Sendable {
     expectedRevision: Int,
     operationID: UUID? = nil
   ) throws -> StoreReceipt {
+    try save(
+      record: record,
+      document: document,
+      expectedRevision: expectedRevision,
+      operationID: operationID,
+      asset: nil,
+      requestHash: nil)
+  }
+
+  @discardableResult
+  public func save(
+    asset: Asset,
+    record: DomainRecord,
+    document: BlockDocument,
+    expectedRevision: Int,
+    operationID: UUID? = nil
+  ) throws -> StoreReceipt {
+    try saveAsset(
+      asset,
+      record: record,
+      document: document,
+      expectedRevision: expectedRevision,
+      operationID: operationID)
+  }
+
+  private func save(
+    record: DomainRecord,
+    document: BlockDocument,
+    expectedRevision: Int,
+    operationID: UUID?,
+    asset: Asset?,
+    requestHash: String?
+  ) throws -> StoreReceipt {
     guard record.id == document.recordID else { throw ProductStoreError.invalidDocument }
     try document.validate()
     let operationID = operationID ?? ids.next()
     let request = try Self.encode(Request(record: record, document: document, expectedRevision: expectedRevision))
-    let requestHash = Self.fingerprint(request)
+    let requestHash = requestHash ?? Self.fingerprint(request)
     let result = try pool.write { db -> StoreReceipt in
       if let existing = try Row.fetchOne(
         db, sql: "SELECT sequence, entity_revision, request_hash FROM operations WHERE id = ?",
@@ -300,6 +355,7 @@ public final class ProductStore: @unchecked Sendable {
         db, operationID: operationID, entityID: record.id, revision: persisted.revision,
         kind: "document.save", payload: payload, requestHash: requestHash
       ) { receipt in
+        if let asset { try Self.upsertAsset(asset, db: db) }
         try Self.writeProjection(persisted, document: document, db: db)
         return receipt
       }
@@ -595,6 +651,29 @@ public final class ProductStore: @unchecked Sendable {
           block.position, block.orderKey, try encode(block),
         ])
     }
+  }
+
+  private static func references(_ assetID: UUID, in document: BlockDocument) -> Bool {
+    document.blocks.contains { block in
+      guard case .assets(let placements) = block.content else { return false }
+      return placements.contains { $0.assetID == assetID }
+    }
+  }
+
+  private static func upsertAsset(_ asset: Asset, db: Database) throws {
+    if let existing = try Row.fetchOne(
+      db,
+      sql: "SELECT content_hash, byte_count FROM assets WHERE id = ?",
+      arguments: [asset.id.uuidString]) {
+      let hash: String = existing["content_hash"]
+      let byteCount: Int64 = existing["byte_count"]
+      guard hash == asset.contentHash, byteCount == asset.byteCount else {
+        throw ProductStoreError.assetConflict
+      }
+    }
+    try db.execute(
+      sql: "INSERT INTO assets (id, content_hash, byte_count, media_type, original_filename) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET media_type = excluded.media_type, original_filename = excluded.original_filename",
+      arguments: [asset.id.uuidString, asset.contentHash, asset.byteCount, asset.mediaType, asset.originalFilename])
   }
 
   private static func normalizedState(_ db: Database) throws -> Data {
