@@ -5,7 +5,7 @@ root_dir="${0:A:h}/.."
 mode="${1:-}"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 artifact_dir="${SYNORA_ARTIFACT_DIR:-${TMPDIR:-/private/tmp}/synora-wiki-p1-$run_id}"
-derived_data="${SYNORA_DERIVED_DATA:-$artifact_dir/xcode}"
+derived_data="${SYNORA_DERIVED_DATA:-${TMPDIR:-/private/tmp}/synora-p2-active-cache/xcode}"
 mkdir -p "$artifact_dir"
 
 if [[ "$mode" != unit && "$mode" != ui && "$mode" != visual && "$mode" != stage ]]; then
@@ -16,7 +16,7 @@ fi
 xcode_test() {
   local test_filter="$1"
   shift
-  xcodebuild \
+  xcodebuild -jobs 2 \
     -project "$root_dir/SynoraWiki.xcodeproj" \
     -scheme SynoraWiki \
     -configuration Debug \
