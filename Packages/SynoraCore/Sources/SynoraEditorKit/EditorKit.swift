@@ -431,6 +431,83 @@ public struct EditorSession: Sendable {
     try execute(.setCalloutStyle(style), blockID: blockID)
   }
 
+  @discardableResult
+  public mutating func applyMarkdownShortcut(
+    in blockID: UUID,
+    inCodeBlock: Bool = false,
+    markedText: Bool = false
+  ) throws -> BlockDocument {
+    guard let source = document.block(id: blockID) else {
+      throw EditorError.invalidSelection
+    }
+    guard let shortcut = MarkdownShortcut.block(
+      for: source.text,
+      inCodeBlock: inCodeBlock || source.type == .code,
+      markedText: markedText) else { return document }
+    var next = try document.settingType(shortcut.type, for: blockID)
+    if shortcut.type.supportsTextEditing {
+      next = try next.editing(id: blockID, text: shortcut.text)
+    }
+    if shortcut.type == .task, let checked = MarkdownShortcut.taskChecked(for: source.text) {
+      next = try next.settingTaskChecked(checked, for: blockID)
+    }
+    return commit(next)
+  }
+
+  @discardableResult
+  public mutating func applySlashCommand(
+    _ command: SlashCommand,
+    in blockID: UUID,
+    clearTrigger: Bool = true
+  ) throws -> BlockDocument {
+    guard let source = document.block(id: blockID) else {
+      throw EditorError.invalidSelection
+    }
+    var next = try document.settingType(command.blockType, for: blockID)
+    if clearTrigger,
+      source.text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
+      next = try next.settingText("", for: blockID)
+    }
+    return commit(next)
+  }
+
+  @discardableResult
+  public mutating func insertReference(
+    _ target: ReferenceCandidate,
+    in blockID: UUID,
+    atUTF16Offset offset: Int,
+    syntax: ReferenceSyntax = .wikiLink
+  ) throws -> BlockDocument {
+    guard let block = document.block(id: blockID), block.type.supportsTextEditing else {
+      throw EditorError.invalidSelection
+    }
+    let value = block.text as NSString
+    guard offset >= 0, offset <= value.length, Self.isComposedBoundary(offset, in: value),
+      let mapped = TextStorageAdapter(document: document).ranges.first(where: { $0.blockID == blockID })
+    else { throw EditorError.invalidSelection }
+    let token = target.token(using: syntax)
+    let next = try TextStorageAdapter(document: document).applying(
+      range: NSRange(location: mapped.range.location + offset, length: 0),
+      replacement: token)
+    return commit(next, focus: EditorFocus(
+      blockID: blockID,
+      utf16Offset: offset + (token as NSString).length))
+  }
+
+  @discardableResult
+  public mutating func insertReference(
+    targetID: UUID,
+    in blockID: UUID,
+    atUTF16Offset offset: Int,
+    syntax: ReferenceSyntax = .wikiLink
+  ) throws -> BlockDocument {
+    try insertReference(
+      ReferenceCandidate(id: targetID, title: "", kind: .record),
+      in: blockID,
+      atUTF16Offset: offset,
+      syntax: syntax)
+  }
+
   private mutating func commit(
     _ next: BlockDocument,
     focus override: EditorFocus? = nil,
@@ -500,7 +577,12 @@ public struct EditorSession: Sendable {
 }
 
 public enum MarkdownShortcut {
-  public static func block(for line: String) -> (type: BlockType, text: String)? {
+  public static func block(
+    for line: String,
+    inCodeBlock: Bool = false,
+    markedText: Bool = false
+  ) -> (type: BlockType, text: String)? {
+    guard !isDisabled(inCodeBlock: inCodeBlock, markedText: markedText) else { return nil }
     if line == "---" { return (.divider, "") }
     let shortcuts: [(String, BlockType)] = [
       ("### ", .heading3), ("## ", .heading2), ("# ", .heading1),
@@ -519,6 +601,12 @@ public enum MarkdownShortcut {
     return nil
   }
 
+  public static func taskChecked(for line: String) -> Bool? {
+    if line.hasPrefix("- [x] ") || line.hasPrefix("- [X] ") { return true }
+    if line.hasPrefix("- [ ] ") { return false }
+    return nil
+  }
+
   public static func isDisabled(inCodeBlock: Bool, markedText: Bool) -> Bool {
     inCodeBlock || markedText
   }
@@ -527,6 +615,11 @@ public enum MarkdownShortcut {
 public enum SlashCommand: String, CaseIterable, Hashable, Sendable {
   case paragraph, heading1, heading2, heading3, bulletedList, numberedList, task
   case quote, code, divider, table, toggle, callout, image, gallery, video, audio, pdf, file, link
+
+  public static var availableCommands: [Self] {
+    [.paragraph, .heading1, .heading2, .heading3, .bulletedList, .numberedList, .task,
+      .quote, .code, .divider, .table, .toggle, .callout]
+  }
 
   public var blockType: BlockType {
     switch self {
@@ -578,41 +671,247 @@ public enum SlashCommand: String, CaseIterable, Hashable, Sendable {
     }
   }
 
+  public var aliases: [String] {
+    switch self {
+    case .paragraph: ["text", "正文", "段落"]
+    case .heading1: ["标题", "一级标题", "h1"]
+    case .heading2: ["标题", "二级标题", "h2"]
+    case .heading3: ["标题", "三级标题", "h3"]
+    case .bulletedList: ["无序列表", "项目符号", "bullet"]
+    case .numberedList: ["有序列表", "编号列表", "number"]
+    case .task: ["待办", "任务", "todo", "checkbox"]
+    case .quote: ["引用", "blockquote"]
+    case .code: ["代码", "代码块", "fenced code"]
+    case .divider: ["分隔线", "水平线", "rule"]
+    case .table: ["表格"]
+    case .toggle: ["折叠", "折叠块"]
+    case .callout: ["提示", "高亮"]
+    case .image: ["图片"]
+    case .gallery: ["画廊", "拼贴"]
+    case .video: ["视频"]
+    case .audio: ["音频"]
+    case .pdf: ["文档"]
+    case .file: ["文件"]
+    case .link: ["链接"]
+    }
+  }
+
   public static func matching(_ query: String) -> [Self] {
-    let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+      .drop(while: { $0 == "/" }).lowercased()
     guard !normalized.isEmpty else { return allCases }
-    return allCases.filter { $0.rawValue.localizedCaseInsensitiveContains(normalized) || $0.title.localizedCaseInsensitiveContains(normalized) }
+    return allCases.filter {
+      $0.rawValue.localizedCaseInsensitiveContains(normalized)
+        || $0.title.localizedCaseInsensitiveContains(normalized)
+        || $0.aliases.contains { $0.localizedCaseInsensitiveContains(normalized) }
+    }
+  }
+}
+
+public enum SlashMenuKey: Hashable, Sendable {
+  case up
+  case down
+  case enter
+  case escape
+
+  public static var returnKey: Self { .enter }
+  public static var esc: Self { .escape }
+}
+
+public enum SlashMenuAction: Hashable, Sendable {
+  case none
+  case selected(SlashCommand)
+  case cancelled
+}
+
+public struct SlashMenuState: Hashable, Sendable {
+  public private(set) var query: String
+  public private(set) var candidates: [SlashCommand]
+  public private(set) var selectedIndex: Int?
+  public private(set) var isPresented: Bool
+  private let commands: [SlashCommand]
+
+  public init(query: String = "", commands: [SlashCommand] = SlashCommand.availableCommands) {
+    self.query = Self.normalizedQuery(query)
+    self.commands = commands
+    candidates = Self.filtered(self.query, commands: commands)
+    selectedIndex = candidates.isEmpty ? nil : 0
+    isPresented = true
+  }
+
+  public mutating func update(query: String) {
+    self.query = Self.normalizedQuery(query)
+    candidates = Self.filtered(self.query, commands: commands)
+    selectedIndex = candidates.isEmpty ? nil : 0
+  }
+
+  @discardableResult
+  public mutating func moveSelection(by delta: Int) -> Int? {
+    guard !candidates.isEmpty else {
+      selectedIndex = nil
+      return nil
+    }
+    let current = selectedIndex ?? 0
+    selectedIndex = (current + delta % candidates.count + candidates.count) % candidates.count
+    return selectedIndex
+  }
+
+  public mutating func handle(_ key: SlashMenuKey) -> SlashMenuAction {
+    guard isPresented else { return .none }
+    switch key {
+    case .up:
+      _ = moveSelection(by: -1)
+      return .none
+    case .down:
+      _ = moveSelection(by: 1)
+      return .none
+    case .enter:
+      guard let selectedIndex else { return .none }
+      isPresented = false
+      return .selected(candidates[selectedIndex])
+    case .escape:
+      isPresented = false
+      return .cancelled
+    }
+  }
+
+  public mutating func cancel() {
+    isPresented = false
+  }
+
+  private static func normalizedQuery(_ query: String) -> String {
+    query.trimmingCharacters(in: .whitespacesAndNewlines).drop { $0 == "/" }.description
+  }
+
+  private static func filtered(_ query: String, commands: [SlashCommand]) -> [SlashCommand] {
+    guard !query.isEmpty else { return commands }
+    return commands.filter { command in
+      command.rawValue.localizedCaseInsensitiveContains(query)
+        || command.title.localizedCaseInsensitiveContains(query)
+        || command.aliases.contains { $0.localizedCaseInsensitiveContains(query) }
+    }
+  }
+}
+
+public enum ReferenceSyntax: String, Codable, Hashable, Sendable {
+  case wikiLink
+  case mention
+
+  public static var wikilink: Self { .wikiLink }
+}
+
+public enum ReferenceTargetKind: String, Codable, Hashable, Sendable {
+  case record
+  case block
+}
+
+public struct ReferenceCandidate: Hashable, Sendable {
+  public let id: UUID
+  public let title: String
+  public let kind: ReferenceTargetKind
+
+  public init(id: UUID, title: String, kind: ReferenceTargetKind) {
+    self.id = id
+    self.title = title
+    self.kind = kind
+  }
+
+  public func token(using syntax: ReferenceSyntax = .wikiLink) -> String {
+    switch syntax {
+    case .wikiLink: "[[\(id.uuidString)]]"
+    case .mention: "@[\(id.uuidString)]"
+    }
   }
 }
 
 public struct RecordReference: Hashable, Sendable {
   public let targetID: UUID
   public let range: NSRange
+  public let syntax: ReferenceSyntax
 
-  public init(targetID: UUID, range: NSRange) {
+  public init(targetID: UUID, range: NSRange, syntax: ReferenceSyntax = .wikiLink) {
     self.targetID = targetID
     self.range = range
+    self.syntax = syntax
   }
 }
 
 public enum ReferenceParser {
+  public static func candidates(
+    for query: String,
+    records: [Record],
+    blocks: [Block] = []
+  ) -> [ReferenceCandidate] {
+    let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+      .drop(while: { $0 == "@" || $0 == "[" }).lowercased()
+    let candidates = records.map {
+      ReferenceCandidate(id: $0.id, title: $0.title, kind: .record)
+    } + blocks.map {
+      ReferenceCandidate(
+        id: $0.id,
+        title: $0.text.isEmpty ? $0.type.accessibilityName : $0.text,
+        kind: .block)
+    }
+    return candidates
+      .filter { normalized.isEmpty || $0.title.localizedCaseInsensitiveContains(normalized) }
+      .sorted {
+        let order = $0.title.localizedCaseInsensitiveCompare($1.title)
+        return order == .orderedSame ? $0.id.uuidString < $1.id.uuidString : order == .orderedAscending
+      }
+  }
+
   public static func recordReferences(in text: String) -> [RecordReference] {
+    references(in: text)
+  }
+
+  public static func references(in text: String, targetID: UUID? = nil) -> [RecordReference] {
     let source = text as NSString
     var result: [RecordReference] = []
     var cursor = 0
     while cursor < source.length {
-      let open = source.range(of: "[[", options: [], range: NSRange(location: cursor, length: source.length - cursor))
+      let searchRange = NSRange(location: cursor, length: source.length - cursor)
+      let wikiOpen = source.range(of: "[[", options: [], range: searchRange)
+      let mentionOpen = source.range(of: "@[", options: [], range: searchRange)
+      let useMention = mentionOpen.location != NSNotFound
+        && (wikiOpen.location == NSNotFound || mentionOpen.location < wikiOpen.location)
+      let open = useMention ? mentionOpen : wikiOpen
       guard open.location != NSNotFound else { break }
       let valueStart = NSMaxRange(open)
-      let close = source.range(of: "]]", options: [], range: NSRange(location: valueStart, length: source.length - valueStart))
+      let close = source.range(
+        of: useMention ? "]" : "]]",
+        options: [],
+        range: NSRange(location: valueStart, length: source.length - valueStart))
       guard close.location != NSNotFound else { break }
       let value = source.substring(with: NSRange(location: valueStart, length: close.location - valueStart))
-      if let targetID = UUID(uuidString: value) {
-        result.append(RecordReference(targetID: targetID, range: NSRange(location: open.location, length: NSMaxRange(close) - open.location)))
+      let rawID = value.split(separator: "|", maxSplits: 1).first.map(String.init) ?? value
+      if let parsedID = UUID(uuidString: rawID), targetID == nil || targetID == parsedID {
+        result.append(RecordReference(
+          targetID: parsedID,
+          range: NSRange(location: open.location, length: NSMaxRange(close) - open.location),
+          syntax: useMention ? .mention : .wikiLink))
       }
-      cursor = NSMaxRange(close)
+      cursor = max(NSMaxRange(close), valueStart)
     }
     return result
+  }
+
+  public static func resolve(
+    _ reference: RecordReference,
+    in candidates: [ReferenceCandidate]
+  ) -> ReferenceCandidate? {
+    candidates.first { $0.id == reference.targetID }
+  }
+
+  public static func targetID(atUTF16Offset offset: Int, in text: String) -> UUID? {
+    references(in: text).first { NSLocationInRange(offset, $0.range) }?.targetID
+  }
+
+  public static func backlinks(to targetID: UUID, in documents: [BlockDocument]) -> [UUID] {
+    documents.flatMap { document in
+      document.blocks.filter {
+        !references(in: $0.text, targetID: targetID).isEmpty
+      }.map(\.id)
+    }
   }
 }
 

@@ -197,3 +197,89 @@ func advancedEditorEditsTablesNavigatesAndRestoresCollapsedFocus() throws {
   _ = try session.undo()
   #expect(session.focus?.blockID == childID)
 }
+
+@Test
+func markdownAndSlashCommandsRespectMarkedCodeAndUndoBoundaries() throws {
+  #expect(MarkdownShortcut.block(for: "# 标题", inCodeBlock: true) == nil)
+  #expect(MarkdownShortcut.block(for: "# 标题", markedText: true) == nil)
+  #expect(MarkdownShortcut.taskChecked(for: "- [x] 完成") == true)
+
+  var menu = SlashMenuState(query: "/标题")
+  #expect(menu.candidates == [.heading1, .heading2, .heading3])
+  #expect(SlashCommand.matching("/标题") == [.heading1, .heading2, .heading3])
+  _ = menu.moveSelection(by: 1)
+  #expect(menu.selectedIndex == 1)
+  let cancelled = menu.handle(.escape)
+  #expect(cancelled == .cancelled)
+  #expect(!menu.isPresented)
+  var empty = SlashMenuState(query: "不存在")
+  #expect(empty.candidates.isEmpty)
+  #expect(empty.handle(.enter) == .none)
+  empty.update(query: "代码")
+  #expect(empty.candidates == [.code])
+
+  let recordID = UUID()
+  let blockID = UUID()
+  let original = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: blockID, recordID: recordID, position: 0, text: "- [x] 完成"),
+  ])
+  var session = EditorSession(document: original)
+  _ = try session.applyMarkdownShortcut(in: blockID)
+  #expect(session.document.block(id: blockID)?.type == .task)
+  #expect(session.document.block(id: blockID)?.text == "完成")
+  #expect(session.document.block(id: blockID)?.attributes["checked"] == "true")
+  _ = try session.undo()
+  #expect(session.document == original)
+
+  let slashID = UUID()
+  session = EditorSession(document: try BlockDocument(recordID: recordID, blocks: [
+    Block(id: slashID, recordID: recordID, position: 0, text: "/标题"),
+  ]))
+  _ = try session.applySlashCommand(.heading2, in: slashID)
+  #expect(session.document.block(id: slashID)?.type == .heading2)
+  #expect(session.document.block(id: slashID)?.text == "")
+
+  let tableSlashID = UUID()
+  session = EditorSession(document: try BlockDocument(recordID: recordID, blocks: [
+    Block(id: tableSlashID, recordID: recordID, position: 0, text: "/table"),
+  ]))
+  _ = try session.applySlashCommand(.table, in: tableSlashID)
+  #expect(session.document.block(id: tableSlashID)?.text == "")
+  #expect(session.document.block(id: tableSlashID)?.content != nil)
+}
+
+@Test
+func referencesUseStableIDsAndOnlyResolveLocalTargets() throws {
+  let targetID = UUID(uuidString: "00000000-0000-4000-8000-0000000000a1")!
+  let sourceRecordID = UUID()
+  let sourceBlockID = UUID()
+  let old = Record(id: targetID, title: "旧名称")
+  let candidates = ReferenceParser.candidates(for: "旧", records: [old])
+  #expect(candidates.count == 1)
+  #expect(candidates[0].token(using: .mention) == "@[\(targetID.uuidString)]")
+
+  let text = "see [[\(targetID.uuidString)]] @[\(targetID.uuidString)]"
+  let references = ReferenceParser.references(in: text)
+  #expect(references.count == 2)
+  #expect(references.map(\.syntax) == [.wikiLink, .mention])
+  #expect(ReferenceParser.targetID(atUTF16Offset: references[0].range.location + 3, in: text) == targetID)
+  #expect(ReferenceParser.candidates(for: "", records: []).isEmpty)
+  let renamed = ReferenceParser.candidates(for: "新", records: [Record(id: targetID, title: "新名称")])
+  #expect(ReferenceParser.resolve(references[0], in: renamed)?.title == "新名称")
+  #expect(ReferenceParser.resolve(references[0], in: []) == nil)
+
+  let source = try BlockDocument(recordID: sourceRecordID, blocks: [
+    Block(
+      id: sourceBlockID,
+      recordID: sourceRecordID,
+      position: 0,
+      text: "引用："),
+  ])
+  #expect(ReferenceParser.backlinks(to: targetID, in: [source]).isEmpty)
+  var session = EditorSession(document: source)
+  _ = try session.insertReference(
+    candidates[0], in: sourceBlockID, atUTF16Offset: ("引用：" as NSString).length)
+  #expect(session.document.block(id: sourceBlockID)?.text == "引用：[[\(targetID.uuidString)]]")
+  _ = try session.undo()
+  #expect(session.document == source)
+}

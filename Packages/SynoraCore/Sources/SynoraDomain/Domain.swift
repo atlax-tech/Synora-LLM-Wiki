@@ -703,6 +703,17 @@ public struct BlockDocument: Codable, Hashable, Sendable {
     return copy
   }
 
+  public func settingText(_ text: String, for id: UUID) throws -> Self {
+    guard block(id: id) != nil else { throw BlockTreeError.missingParent(id) }
+    var copy = self
+    guard let index = copy.blocks.firstIndex(where: { $0.id == id }) else {
+      throw BlockTreeError.missingParent(id)
+    }
+    copy.blocks[index].text = text
+    try copy.validate()
+    return copy
+  }
+
   public func editingTableCell(
     id: UUID,
     row: Int,
@@ -934,6 +945,18 @@ public struct BlockDocument: Codable, Hashable, Sendable {
       throw BlockTreeError.missingParent(id)
     }
     copy.blocks[index].attributes["checked"] = source.attributes["checked"] == "true" ? "false" : "true"
+    return copy
+  }
+
+  public func settingTaskChecked(_ checked: Bool, for id: UUID) throws -> Self {
+    guard let source = block(id: id), source.type == .task else {
+      throw BlockTreeError.invalidChild(id)
+    }
+    var copy = self
+    guard let index = copy.blocks.firstIndex(where: { $0.id == id }) else {
+      throw BlockTreeError.missingParent(id)
+    }
+    copy.blocks[index].attributes["checked"] = checked ? "true" : "false"
     return copy
   }
 
