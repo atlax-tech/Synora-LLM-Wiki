@@ -16,7 +16,9 @@ let package = Package(
     .library(name: "SynoraBenchmark", targets: ["SynoraBenchmark"]),
     .library(name: "SynoraDesignSystem", targets: ["SynoraDesignSystem"]),
     .executable(name: "SynoraBenchmarkGenerator", targets: ["SynoraBenchmarkGenerator"]),
-    .executable(name: "SynoraPlatformProbe", targets: ["SynoraPlatformProbe"])
+    .executable(name: "SynoraPlatformProbe", targets: ["SynoraPlatformProbe"]),
+    .executable(name: "SynoraP2Performance", targets: ["SynoraP2Performance"]),
+    .executable(name: "SynoraP2Recovery", targets: ["SynoraP2Recovery"])
   ],
   dependencies: [
     .package(url: "https://github.com/groue/GRDB.swift.git", exact: "7.10.0")
@@ -41,6 +43,11 @@ let package = Package(
     .target(name: "SynoraDesignSystem"),
     .executableTarget(name: "SynoraBenchmarkGenerator", dependencies: ["SynoraBenchmark"]),
     .executableTarget(name: "SynoraPlatformProbe", dependencies: ["SynoraPlatform"]),
+    .executableTarget(
+      name: "SynoraP2Performance",
+      dependencies: ["SynoraStore", "SynoraAssets", "SynoraDomain"]
+    ),
+    .executableTarget(name: "SynoraP2Recovery", dependencies: ["SynoraStore", "SynoraDomain"]),
     .executableTarget(name: "SynoraStoreCrashWriter", dependencies: ["SynoraStoreProbe"]),
     .testTarget(name: "SynoraDomainTests", dependencies: ["SynoraDomain"]),
     .testTarget(name: "SynoraPlatformTests", dependencies: ["SynoraPlatform"]),
