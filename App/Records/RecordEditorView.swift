@@ -11,6 +11,10 @@ struct RecordEditorView: View {
   @State private var importingAttachment = false
   @State private var replacingAttachment = false
   @State private var replacementTarget: AttachmentReplacement?
+  @State private var findPresented = false
+  @State private var findQuery = ""
+  @State private var replaceQuery = ""
+  @State private var exportError: String?
 
   var body: some View {
     ScrollView {
@@ -59,9 +63,24 @@ struct RecordEditorView: View {
 
       Divider()
 
+      editorControls(for: record)
+
+      if findPresented {
+        findReplaceControls(for: record)
+      }
+
+      if let editorError = model.editorError {
+        Label(editorError, systemImage: "exclamationmark.triangle")
+          .font(SynoraTypography.metadata.font)
+          .foregroundStyle(SynoraSemanticColor.warningInline.color)
+          .accessibilityIdentifier("editor-error")
+      }
+
       SynoraEditorRepresentable(
         text: model.editorText(for: record),
-        onTextChange: { model.setEditorText($0, for: record) }
+        selection: model.editorSelection(for: record),
+        onTextChange: { model.setEditorText($0, for: record) },
+        onSelectionChange: { model.setEditorSelection($0, for: record) }
       )
       .frame(minHeight: 260)
       .background(SynoraSemanticColor.canvas.color)
@@ -97,6 +116,12 @@ struct RecordEditorView: View {
             },
             onRemove: { blockID, assetID in
               model.removeAttachment(assetID: assetID, from: blockID, for: record)
+            },
+            onCaptionChange: { blockID, assetID, caption in
+              model.setAssetCaption(caption, assetID: assetID, in: blockID, for: record)
+            },
+            onLayoutChange: { blockID, layout in
+              model.setMediaLayout(layout, in: blockID, for: record)
             })
         }
       }
@@ -130,6 +155,104 @@ struct RecordEditorView: View {
           for: record)
       }
     }
+    .alert("Export failed", isPresented: exportAlertBinding) {
+      Button("OK", role: .cancel) { exportError = nil }
+    } message: {
+      Text(exportError ?? "Unknown export error")
+    }
+  }
+
+  private func editorControls(for record: Record) -> some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: SynoraSpacing.sm) {
+        Menu("Block", systemImage: "text.alignleft") {
+          ForEach(SlashCommand.availableCommands, id: \.self) { command in
+            Button(command.title) { model.applySlashCommand(command, for: record) }
+          }
+          Divider()
+          Button("Apply Markdown Shortcut") { model.applyMarkdownShortcut(for: record) }
+          Button("Toggle Task") { model.toggleTask(for: record) }
+          Button("Toggle Collapse") { model.toggleCollapse(for: record) }
+        }
+        .accessibilityIdentifier("editor-block-menu")
+
+        Menu("Format", systemImage: "textformat") {
+          ForEach([InlineStyle.bold, .italic, .strikethrough, .inlineCode], id: \.self) { style in
+            Button(formatTitle(style)) { model.applyFormatting(style, for: record) }
+          }
+        }
+        .accessibilityIdentifier("editor-format-menu")
+
+        Button("Undo", systemImage: "arrow.uturn.backward") {
+          model.undoEditor(for: record)
+        }
+        .accessibilityIdentifier("editor-undo")
+
+        Button("Redo", systemImage: "arrow.uturn.forward") {
+          model.redoEditor(for: record)
+        }
+        .accessibilityIdentifier("editor-redo")
+
+        Button("Find", systemImage: "magnifyingglass") {
+          findPresented.toggle()
+        }
+        .accessibilityIdentifier("editor-find")
+
+        Menu("Export", systemImage: "square.and.arrow.up") {
+          ForEach(RecordExportFormat.allCases) { format in
+            Button(format.title) { export(format, record: record) }
+          }
+        }
+        .accessibilityIdentifier("editor-export-menu")
+      }
+    }
+    .font(SynoraTypography.metadata.font)
+  }
+
+  private func findReplaceControls(for record: Record) -> some View {
+    HStack(spacing: SynoraSpacing.sm) {
+      TextField("Find", text: $findQuery)
+        .textFieldStyle(.roundedBorder)
+        .accessibilityIdentifier("editor-find-query")
+      TextField("Replace with", text: $replaceQuery)
+        .textFieldStyle(.roundedBorder)
+        .accessibilityIdentifier("editor-replace-query")
+      Button("Replace All") {
+        model.replaceAll(query: findQuery, with: replaceQuery, for: record)
+      }
+      .disabled(findQuery.isEmpty)
+      Button("Close") { findPresented = false }
+    }
+  }
+
+  private var exportAlertBinding: Binding<Bool> {
+    Binding(
+      get: { exportError != nil },
+      set: { if !$0 { exportError = nil } }
+    )
+  }
+
+  private func export(_ format: RecordExportFormat, record: Record) {
+    let panel = NSSavePanel()
+    panel.allowedContentTypes = [UTType(filenameExtension: format.fileExtension) ?? .data]
+    panel.nameFieldStringValue = "\(model.editorTitle(for: record)).\(format.fileExtension)"
+    panel.canCreateDirectories = true
+    guard panel.runModal() == .OK, let destinationURL = panel.url else { return }
+    do {
+      try model.export(format, record: record, to: destinationURL)
+    } catch {
+      exportError = String(describing: error)
+    }
+  }
+
+  private func formatTitle(_ style: InlineStyle) -> String {
+    switch style {
+    case .bold: "Bold"
+    case .italic: "Italic"
+    case .strikethrough: "Strikethrough"
+    case .inlineCode: "Inline code"
+    case .link: "Link"
+    }
   }
 
   private func titleBinding(for record: Record) -> Binding<String> {
@@ -158,19 +281,24 @@ private struct AttachmentReplacement: Equatable {
 
 private struct SynoraEditorRepresentable: NSViewRepresentable {
   let text: String
+  let selection: NSRange
   let onTextChange: @MainActor (String) -> Void
+  let onSelectionChange: @MainActor (NSRange) -> Void
 
   @MainActor
   func makeNSView(context: Context) -> SynoraTextView {
     let view = SynoraTextView()
     view.string = text
+    view.setSelectedRange(selection)
     view.onTextChange = onTextChange
+    view.onSelectionChange = onSelectionChange
     return view
   }
 
   @MainActor
   func updateNSView(_ nsView: SynoraTextView, context: Context) {
     if nsView.string != text { nsView.setDocumentText(text) }
+    if nsView.selectedRange != selection { nsView.setSelectedRange(selection) }
   }
 }
 
@@ -196,6 +324,8 @@ private struct RecordMediaStack: View {
   let assetStore: AssetStore
   let onReplace: (UUID, UUID) -> Void
   let onRemove: (UUID, UUID) -> Void
+  let onCaptionChange: (UUID, UUID, String) -> Void
+  let onLayoutChange: (UUID, MediaLayout) -> Void
 
   @State private var previews: [UUID: AssetPreview] = [:]
   @State private var failures: [UUID: MediaPreviewFailure] = [:]
@@ -214,9 +344,23 @@ private struct RecordMediaStack: View {
   private func mediaBlock(_ block: Block) -> some View {
     switch block.content {
     case .assets(let placements)?:
-      ForEach(placements, id: \.assetID) { placement in
-        if let asset = assets[placement.assetID] {
-          mediaAsset(asset, placement: placement, block: block)
+      VStack(alignment: .leading, spacing: SynoraSpacing.sm) {
+        HStack {
+          Label(block.type.accessibilityName, systemImage: "photo.on.rectangle")
+          Spacer(minLength: 0)
+          if let currentLayout = block.mediaLayout {
+            Menu("Layout") {
+              ForEach(MediaLayout.allCases, id: \.self) { layout in
+                Button(layoutTitle(layout)) { onLayoutChange(block.id, layout) }
+              }
+            }
+            .accessibilityValue(layoutTitle(currentLayout))
+          }
+        }
+        ForEach(placements.sorted(by: { $0.order < $1.order }), id: \.assetID) { placement in
+          if let asset = assets[placement.assetID] {
+            mediaAsset(asset, placement: placement, block: block)
+          }
         }
       }
     case .link(let card)?:
@@ -267,11 +411,15 @@ private struct RecordMediaStack: View {
             .foregroundStyle(SynoraSemanticColor.inkSecondary.color)
         }
       }
-      if !placement.caption.isEmpty {
-        Text(placement.caption)
-          .font(SynoraTypography.metadata.font)
-          .foregroundStyle(SynoraSemanticColor.inkSecondary.color)
-      }
+      TextField(
+        "Caption",
+        text: Binding(
+          get: { placement.caption },
+          set: { onCaptionChange(block.id, asset.id, $0) }
+        ))
+        .textFieldStyle(.roundedBorder)
+        .font(SynoraTypography.metadata.font)
+        .accessibilityLabel("Caption for \(asset.originalFilename ?? "Attachment")")
       HStack(spacing: SynoraSpacing.sm) {
         Button("Replace", systemImage: "arrow.triangle.2.circlepath") {
           onReplace(block.id, asset.id)
@@ -330,6 +478,14 @@ private struct RecordMediaStack: View {
       } else {
         Label(asset.originalFilename ?? "Attachment", systemImage: preview.kind == .audio ? "waveform" : "film")
       }
+    }
+  }
+
+  private func layoutTitle(_ layout: MediaLayout) -> String {
+    switch layout {
+    case .single: "Single"
+    case .collage: "Collage"
+    case .gallery: "Gallery"
     }
   }
 }

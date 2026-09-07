@@ -1,8 +1,10 @@
+import Foundation
 import Observation
 import SwiftUI
 import SynoraAssets
 import SynoraDomain
 import SynoraEditorKit
+import SynoraExport
 import SynoraStore
 
 enum EditorSaveState: Equatable {
@@ -17,6 +19,33 @@ enum EditorSaveState: Equatable {
     case .saving: "Saving…"
     case .conflict: "Conflict — changes kept locally"
     case .failed: "Save failed — changes kept locally"
+    }
+  }
+}
+
+enum RecordExportFormat: String, CaseIterable, Identifiable {
+  case markdown
+  case html
+  case pdf
+  case package
+
+  var id: Self { self }
+
+  var title: String {
+    switch self {
+    case .markdown: "Markdown"
+    case .html: "HTML"
+    case .pdf: "PDF"
+    case .package: "Synora package"
+    }
+  }
+
+  var fileExtension: String {
+    switch self {
+    case .markdown: "md"
+    case .html: "html"
+    case .pdf: "pdf"
+    case .package: "synora"
     }
   }
 }
@@ -40,7 +69,9 @@ final class ShellModel {
   private(set) var selectedRecordIDs: [RecordKind: UUID?] = [.note: nil, .journal: nil]
   private(set) var editorTextByRecordID: [UUID: String] = [:]
   private(set) var editorTitleByRecordID: [UUID: String] = [:]
+  private(set) var editorSelectionByRecordID: [UUID: NSRange] = [:]
   private(set) var editorSaveState: EditorSaveState = .saved
+  private(set) var editorError: String?
 
   private(set) var desiredSidebarVisible: Bool
   private(set) var desiredInspectorVisible: Bool
@@ -48,6 +79,7 @@ final class ShellModel {
   private let store: ProductStore?
   let assetStore: AssetStore?
   private var documentsByRecordID: [UUID: BlockDocument] = [:]
+  private var editorSessions: [UUID: EditorSession] = [:]
   private var assetsByID: [UUID: Asset] = [:]
   private var loadTask: Task<Void, Never>?
   private var saveTasks: [UUID: Task<Void, Never>] = [:]
@@ -147,12 +179,21 @@ final class ShellModel {
     editorTitleByRecordID[record.id] ?? record.title
   }
 
+  func editorSelection(for record: Record) -> NSRange {
+    editorSelectionByRecordID[record.id] ?? NSRange(location: 0, length: 0)
+  }
+
+  func setEditorSelection(_ selection: NSRange, for record: Record) {
+    guard selection.location >= 0, selection.length >= 0 else { return }
+    editorSelectionByRecordID[record.id] = selection
+  }
+
   var attachmentImportEnabled: Bool {
     store != nil && assetStore != nil && ShellEnvironment.fixture != "records"
   }
 
   func mediaBlocks(for record: Record) -> [Block] {
-    documentsByRecordID[record.id]?.children().filter {
+    documentsByRecordID[record.id]?.blocks.filter {
       $0.type.supportsAssetPlacements || $0.type == .link
     } ?? []
   }
@@ -173,10 +214,143 @@ final class ShellModel {
     ensureEditorState(for: record)
     guard editorTextByRecordID[record.id] != text else { return }
     editorTextByRecordID[record.id] = text
-    if let document = makeDocument(text: text, basedOn: documentsByRecordID[record.id], recordID: record.id) {
+    if var session = editorSessions[record.id], let oldDocument = documentsByRecordID[record.id] {
+      let oldText = TextStorageAdapter(document: oldDocument).text
+      let change = textChange(from: oldText, to: text)
+      if let document = try? session.apply(range: change.range, replacement: change.replacement) {
+        editorSessions[record.id] = session
+        documentsByRecordID[record.id] = document
+      } else if let document = makeDocument(text: text, basedOn: oldDocument, recordID: record.id) {
+        documentsByRecordID[record.id] = document
+        editorSessions[record.id] = EditorSession(document: document)
+      }
+    } else if let document = makeDocument(text: text, basedOn: documentsByRecordID[record.id], recordID: record.id) {
       documentsByRecordID[record.id] = document
+      editorSessions[record.id] = EditorSession(document: document)
     }
     scheduleSave(for: record.id)
+  }
+
+  func applyFormatting(
+    _ style: InlineStyle,
+    linkURL: String? = nil,
+    for record: Record
+  ) {
+    mutateEditor(for: record) { session in
+      try session.applyFormatting(
+        style,
+        in: self.editorSelection(for: record),
+        linkURL: linkURL)
+    }
+  }
+
+  func setBlockType(_ type: BlockType, for record: Record) {
+    mutateEditor(for: record) { session in
+      guard let blockID = self.blockID(at: self.editorSelection(for: record), in: session.document) else {
+        throw EditorError.invalidSelection
+      }
+      return try session.execute(.setBlockType(type), blockID: blockID)
+    }
+  }
+
+  func applySlashCommand(_ command: SlashCommand, for record: Record) {
+    mutateEditor(for: record) { session in
+      guard let blockID = self.blockID(at: self.editorSelection(for: record), in: session.document) else {
+        throw EditorError.invalidSelection
+      }
+      return try session.applySlashCommand(command, in: blockID)
+    }
+  }
+
+  func applyMarkdownShortcut(for record: Record) {
+    mutateEditor(for: record) { session in
+      guard let blockID = self.blockID(at: self.editorSelection(for: record), in: session.document) else {
+        throw EditorError.invalidSelection
+      }
+      return try session.applyMarkdownShortcut(in: blockID)
+    }
+  }
+
+  func toggleTask(for record: Record) {
+    mutateEditor(for: record) { session in
+      guard let blockID = self.blockID(at: self.editorSelection(for: record), in: session.document) else {
+        throw EditorError.invalidSelection
+      }
+      return try session.execute(.toggleTask, blockID: blockID)
+    }
+  }
+
+  func toggleCollapse(for record: Record) {
+    mutateEditor(for: record) { session in
+      guard let blockID = self.blockID(at: self.editorSelection(for: record), in: session.document) else {
+        throw EditorError.invalidSelection
+      }
+      return try session.toggleCollapse(in: blockID)
+    }
+  }
+
+  func undoEditor(for record: Record) {
+    mutateEditor(for: record) { try $0.undo() }
+  }
+
+  func redoEditor(for record: Record) {
+    mutateEditor(for: record) { try $0.redo() }
+  }
+
+  func replaceAll(query: String, with replacement: String, for record: Record) {
+    mutateEditor(for: record) { try $0.replaceAll(query: query, with: replacement) }
+  }
+
+  func setAssetCaption(
+    _ caption: String,
+    assetID: UUID,
+    in blockID: UUID,
+    for record: Record
+  ) {
+    mutateEditor(for: record) { try $0.setAssetCaption(caption, for: assetID, in: blockID) }
+  }
+
+  func reorderAttachment(
+    _ assetID: UUID,
+    in blockID: UUID,
+    before targetAssetID: UUID?,
+    for record: Record
+  ) {
+    mutateEditor(for: record) {
+      try $0.reorderAsset(assetID, in: blockID, before: targetAssetID)
+    }
+  }
+
+  func setMediaLayout(_ layout: MediaLayout, in blockID: UUID, for record: Record) {
+    mutateEditor(for: record) { try $0.setMediaLayout(layout, in: blockID) }
+  }
+
+  func export(
+    _ format: RecordExportFormat,
+    record: Record,
+    to destinationURL: URL
+  ) throws {
+    guard let document = documentsByRecordID[record.id] else {
+      throw ExportError.invalidDocument
+    }
+    let domainRecord = makeDomainRecord(from: record, title: editorTitle(for: record))
+    let service = RecordExportService(assetStore: assetStore)
+    switch format {
+    case .markdown:
+      try service.markdown(record: domainRecord, document: document)
+        .write(to: destinationURL, atomically: true, encoding: .utf8)
+    case .html:
+      try service.html(record: domainRecord, document: document)
+        .write(to: destinationURL, atomically: true, encoding: .utf8)
+    case .pdf:
+      try service.exportPDF(record: domainRecord, document: document, to: destinationURL)
+    case .package:
+      try service.exportPackage(
+        record: domainRecord,
+        document: document,
+        assets: mediaAssets(for: record).map(\.value),
+        to: destinationURL)
+    }
   }
 
   func setEditorTitle(_ title: String, for record: Record) {
@@ -464,6 +638,12 @@ final class ShellModel {
       }
     }
     documentsByRecordID = documentByID
+    editorSessions = Dictionary(uniqueKeysWithValues: documentByID.map { id, document in
+      (id, EditorSession(document: document))
+    })
+    editorSelectionByRecordID = Dictionary(uniqueKeysWithValues: records.map {
+      ($0.id, NSRange(location: 0, length: 0))
+    })
     editorTextByRecordID = Dictionary(uniqueKeysWithValues: records.map {
       ($0.id, text(for: documentByID[$0.id]))
     })
@@ -483,6 +663,8 @@ final class ShellModel {
     documentsByRecordID[record.id] = document
     editorTextByRecordID[record.id] = text(for: document)
     editorTitleByRecordID[record.id] = record.title
+    editorSessions[record.id] = EditorSession(document: document)
+    editorSelectionByRecordID[record.id] = NSRange(location: 0, length: 0)
     apply(records: records.values.flatMap { $0 }, documents: Array(documentsByRecordID.values))
     contentState = .loaded
   }
@@ -492,6 +674,63 @@ final class ShellModel {
     if editorTextByRecordID[record.id] == nil {
       editorTextByRecordID[record.id] = text(for: documentsByRecordID[record.id])
     }
+    if editorSessions[record.id] == nil, let document = documentsByRecordID[record.id] {
+      editorSessions[record.id] = EditorSession(document: document)
+    }
+  }
+
+  private func mutateEditor(
+    for record: Record,
+    _ operation: (inout EditorSession) throws -> BlockDocument
+  ) {
+    ensureEditorState(for: record)
+    guard var session = editorSessions[record.id] else {
+      editorError = "Editor document is unavailable"
+      editorSaveState = .failed
+      return
+    }
+    do {
+      let document = try operation(&session)
+      editorSessions[record.id] = session
+      documentsByRecordID[record.id] = document
+      editorTextByRecordID[record.id] = text(for: document)
+      editorError = nil
+      scheduleSave(for: record.id)
+    } catch {
+      editorError = String(describing: error)
+      editorSaveState = .failed
+    }
+  }
+
+  private func blockID(at selection: NSRange, in document: BlockDocument) -> UUID? {
+    let ranges = TextStorageAdapter(document: document).ranges
+    guard !ranges.isEmpty else { return nil }
+    let offset = max(selection.location, 0)
+    return ranges.first(where: { offset <= NSMaxRange($0.range) })?.blockID ?? ranges.last?.blockID
+  }
+
+  private func textChange(from old: String, to new: String)
+    -> (range: NSRange, replacement: String)
+  {
+    let oldValue = old as NSString
+    let newValue = new as NSString
+    var prefix = 0
+    while prefix < oldValue.length, prefix < newValue.length,
+      oldValue.character(at: prefix) == newValue.character(at: prefix) {
+      prefix += 1
+    }
+    var suffix = 0
+    while suffix < oldValue.length - prefix, suffix < newValue.length - prefix,
+      oldValue.character(at: oldValue.length - suffix - 1)
+        == newValue.character(at: newValue.length - suffix - 1) {
+      suffix += 1
+    }
+    let oldEnd = oldValue.length - suffix
+    let newEnd = newValue.length - suffix
+    return (
+      NSRange(location: prefix, length: oldEnd - prefix),
+      newValue.substring(with: NSRange(location: prefix, length: newEnd - prefix))
+    )
   }
 
   private func saveMediaDocument(

@@ -1728,6 +1728,7 @@ private final class SynoraTextInputView: NSTextView {
 public final class SynoraTextView: NSView, NSTextViewDelegate {
   private let textView: SynoraTextInputView
   public var onTextChange: (@MainActor (String) -> Void)?
+  public var onSelectionChange: (@MainActor (NSRange) -> Void)?
   private var pendingMarkedTextChange = false
   private var lastEmittedString = ""
 
@@ -1759,6 +1760,12 @@ public final class SynoraTextView: NSView, NSTextViewDelegate {
 
   public var usesTextLayoutManager: Bool { textView.textLayoutManager != nil }
 
+  public var selectedRange: NSRange { textView.selectedRange() }
+
+  public func setSelectedRange(_ range: NSRange) {
+    textView.setSelectedRange(range)
+  }
+
   public func setDocumentText(_ text: String) {
     let selection = textView.selectedRange()
     textView.textStorage?.setAttributedString(NSAttributedString(string: text))
@@ -1777,6 +1784,10 @@ public final class SynoraTextView: NSView, NSTextViewDelegate {
     }
     pendingMarkedTextChange = false
     emitTextChange()
+  }
+
+  public func textViewDidChangeSelection(_ notification: Notification) {
+    onSelectionChange?(textView.selectedRange())
   }
 
   private func configure() {
