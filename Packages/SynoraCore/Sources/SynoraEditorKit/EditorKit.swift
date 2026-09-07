@@ -573,10 +573,7 @@ public struct PreparedPaste: Hashable, Sendable {
 
 public enum EditorURLValidator {
   public static func isSupported(_ value: String) -> Bool {
-    guard !value.contains(where: { $0.isWhitespace || $0.isNewline }),
-      let url = URL(string: value), let scheme = url.scheme?.lowercased()
-    else { return false }
-    return ["http", "https", "mailto"].contains(scheme)
+    LinkCard(url: value).isSupportedURL
   }
 }
 

@@ -191,3 +191,44 @@ func nativeMediaEntrypointsKeepOriginalURLAndReportUnsupportedContent() async th
     try store.pdfDocument(for: missing)
   }
 }
+
+@Test
+func linkPreviewKeepsSavedURLWhenOfflineAndUsesOnlyExplicitNetworkAccess() async throws {
+  let card = LinkCard(url: "https://example.com", title: "Saved", summary: "Local")
+  let transport = StubLinkPreviewTransport(
+    data: Data(#"<html><head><title>Remote title</title><meta name="description" content="Remote &amp; detail"></head></html>"#.utf8))
+  let loader = LinkPreviewLoader(transport: transport)
+
+  let offline = await loader.load(card, allowsNetwork: false)
+  #expect(offline.card == card)
+  #expect(offline.state == .networkDisabled)
+  #expect(offline.message != nil)
+
+  let fetched = await loader.load(card, allowsNetwork: true)
+  #expect(fetched.state == .fetched)
+  #expect(fetched.card.url == card.url)
+  #expect(fetched.card.title == "Remote title")
+  #expect(fetched.card.summary == "Remote & detail")
+}
+
+@Test
+func linkPreviewReportsInvalidPagesWithoutDiscardingExistingCard() async throws {
+  let card = LinkCard(url: "https://example.com", title: "Saved")
+  let loader = LinkPreviewLoader(transport: StubLinkPreviewTransport(data: Data("<html/>".utf8)))
+  let failed = await loader.load(card, allowsNetwork: true)
+  #expect(failed.card == card)
+  #expect(failed.state == .failed(.invalidHTML))
+
+  let invalid = await loader.load(LinkCard(url: "javascript:alert(1)"), allowsNetwork: false)
+  #expect(invalid.state == .failed(.invalidURL))
+}
+
+private struct StubLinkPreviewTransport: LinkPreviewTransport {
+  let data: Data
+
+  func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+    let response = HTTPURLResponse(
+      url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+    return (data, response)
+  }
+}
