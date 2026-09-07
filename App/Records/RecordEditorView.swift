@@ -80,7 +80,9 @@ struct RecordEditorView: View {
         text: model.editorText(for: record),
         selection: model.editorSelection(for: record),
         onTextChange: { model.setEditorText($0, for: record) },
-        onSelectionChange: { model.setEditorSelection($0, for: record) }
+        onSelectionChange: { model.setEditorSelection($0, for: record) },
+        onReturn: { model.handleReturn(in: $0, for: record) },
+        onBackspace: { model.handleBackspace(in: $0, for: record) }
       )
       .frame(minHeight: 260)
       .background(SynoraSemanticColor.canvas.color)
@@ -183,6 +185,25 @@ struct RecordEditorView: View {
           }
         }
         .accessibilityIdentifier("editor-format-menu")
+
+        Menu("Structure", systemImage: "list.indent") {
+          Button("Indent") { model.indentEditor(for: record) }
+            .accessibilityIdentifier("editor-indent")
+          Button("Outdent") { model.outdentEditor(for: record) }
+            .accessibilityIdentifier("editor-outdent")
+          Menu("Callout style") {
+            ForEach(CalloutStyle.allCases, id: \.self) { style in
+              Button(style.rawValue.capitalized) { model.setCalloutStyle(style, for: record) }
+            }
+          }
+          .accessibilityIdentifier("editor-callout-style")
+          Divider()
+          Button("Add table row") { model.addTableRow(for: record) }
+            .accessibilityIdentifier("editor-table-add-row")
+          Button("Add table column") { model.addTableColumn(for: record) }
+            .accessibilityIdentifier("editor-table-add-column")
+        }
+        .accessibilityIdentifier("editor-structure-menu")
 
         Button("Undo", systemImage: "arrow.uturn.backward") {
           model.undoEditor(for: record)
@@ -312,6 +333,8 @@ private struct SynoraEditorRepresentable: NSViewRepresentable {
   let selection: NSRange
   let onTextChange: @MainActor (String) -> Void
   let onSelectionChange: @MainActor (NSRange) -> Void
+  let onReturn: @MainActor (NSRange) -> Bool
+  let onBackspace: @MainActor (NSRange) -> Bool
 
   @MainActor
   func makeNSView(context: Context) -> SynoraTextView {
@@ -320,6 +343,8 @@ private struct SynoraEditorRepresentable: NSViewRepresentable {
     view.setSelectedRange(selection)
     view.onTextChange = onTextChange
     view.onSelectionChange = onSelectionChange
+    view.onReturn = onReturn
+    view.onBackspace = onBackspace
     return view
   }
 

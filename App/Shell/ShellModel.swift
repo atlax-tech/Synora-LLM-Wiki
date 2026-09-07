@@ -253,6 +253,99 @@ final class ShellModel {
     }
   }
 
+  func indentEditor(for record: Record) {
+    mutateEditor(for: record) { session in
+      guard let blockID = self.blockID(at: self.editorSelection(for: record), in: session.document) else {
+        throw EditorError.invalidSelection
+      }
+      return try session.execute(.indent, blockID: blockID)
+    }
+  }
+
+  func outdentEditor(for record: Record) {
+    mutateEditor(for: record) { session in
+      guard let blockID = self.blockID(at: self.editorSelection(for: record), in: session.document) else {
+        throw EditorError.invalidSelection
+      }
+      return try session.execute(.outdent, blockID: blockID)
+    }
+  }
+
+  func setCalloutStyle(_ style: CalloutStyle, for record: Record) {
+    mutateEditor(for: record) { session in
+      guard let blockID = self.blockID(at: self.editorSelection(for: record), in: session.document) else {
+        throw EditorError.invalidSelection
+      }
+      return try session.setCalloutStyle(style, in: blockID)
+    }
+  }
+
+  func addTableRow(for record: Record) {
+    mutateEditor(for: record) { session in
+      guard let blockID = self.blockID(at: self.editorSelection(for: record), in: session.document) else {
+        throw EditorError.invalidSelection
+      }
+      return try session.execute(.insertTableRow(at: nil), blockID: blockID)
+    }
+  }
+
+  func addTableColumn(for record: Record) {
+    mutateEditor(for: record) { session in
+      guard let blockID = self.blockID(at: self.editorSelection(for: record), in: session.document) else {
+        throw EditorError.invalidSelection
+      }
+      return try session.execute(.insertTableColumn(at: nil), blockID: blockID)
+    }
+  }
+
+  func handleReturn(in selection: NSRange, for record: Record) -> Bool {
+    guard selection.length == 0 else { return false }
+    ensureEditorState(for: record)
+    guard var session = editorSessions[record.id],
+      let document = documentsByRecordID[record.id],
+      let blockID = blockID(at: selection, in: document),
+      let range = TextStorageAdapter(document: document).range(for: blockID)
+    else { return false }
+    let offset = max(0, selection.location - range.location)
+    do {
+      let updated = try session.pressReturn(in: blockID, atUTF16Offset: offset)
+      editorSessions[record.id] = session
+      documentsByRecordID[record.id] = updated
+      editorTextByRecordID[record.id] = TextStorageAdapter(document: updated).text
+      editorSelectionByRecordID[record.id] = NSRange(
+        location: min(selection.location + 1, (editorTextByRecordID[record.id]! as NSString).length),
+        length: 0)
+      scheduleSave(for: record.id)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  func handleBackspace(in selection: NSRange, for record: Record) -> Bool {
+    guard selection.length == 0, selection.location > 0 else { return false }
+    ensureEditorState(for: record)
+    guard var session = editorSessions[record.id],
+      let document = documentsByRecordID[record.id],
+      let blockID = blockID(at: selection, in: document),
+      let range = TextStorageAdapter(document: document).range(for: blockID)
+    else { return false }
+    let offset = max(0, selection.location - range.location)
+    guard offset == 0 else { return false }
+    do {
+      let updated = try session.pressBackspace(in: blockID, atUTF16Offset: offset)
+      guard updated != document else { return false }
+      editorSessions[record.id] = session
+      documentsByRecordID[record.id] = updated
+      editorTextByRecordID[record.id] = TextStorageAdapter(document: updated).text
+      editorSelectionByRecordID[record.id] = NSRange(location: selection.location - 1, length: 0)
+      scheduleSave(for: record.id)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   func applySlashCommand(_ command: SlashCommand, for record: Record) {
     mutateEditor(for: record) { session in
       guard let blockID = self.blockID(at: self.editorSelection(for: record), in: session.document) else {
@@ -679,15 +772,16 @@ final class ShellModel {
     }
   }
 
+  @discardableResult
   private func mutateEditor(
     for record: Record,
     _ operation: (inout EditorSession) throws -> BlockDocument
-  ) {
+  ) -> BlockDocument? {
     ensureEditorState(for: record)
     guard var session = editorSessions[record.id] else {
       editorError = "Editor document is unavailable"
       editorSaveState = .failed
-      return
+      return nil
     }
     do {
       let document = try operation(&session)
@@ -696,9 +790,11 @@ final class ShellModel {
       editorTextByRecordID[record.id] = text(for: document)
       editorError = nil
       scheduleSave(for: record.id)
+      return document
     } catch {
       editorError = String(describing: error)
       editorSaveState = .failed
+      return nil
     }
   }
 

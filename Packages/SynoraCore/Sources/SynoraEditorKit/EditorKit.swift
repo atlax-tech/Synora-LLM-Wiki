@@ -1697,6 +1697,8 @@ public enum HTMLPasteSanitizer {
 private final class SynoraTextInputView: NSTextView {
   var onMarkedTextChanged: ((Bool) -> Void)?
   var onPaint: (() -> Void)?
+  var onReturn: ((NSRange) -> Bool)?
+  var onBackspace: ((NSRange) -> Bool)?
   private(set) var composing = false
 
   override func setMarkedText(
@@ -1725,6 +1727,16 @@ private final class SynoraTextInputView: NSTextView {
     }
   }
 
+  override func doCommand(by selector: Selector) {
+    if selector == #selector(insertNewline(_:)), onReturn?(selectedRange()) == true {
+      return
+    }
+    if selector == #selector(deleteBackward(_:)), onBackspace?(selectedRange()) == true {
+      return
+    }
+    super.doCommand(by: selector)
+  }
+
   override func draw(_ dirtyRect: NSRect) {
     super.draw(dirtyRect)
     onPaint?()
@@ -1736,6 +1748,9 @@ public final class SynoraTextView: NSView, NSTextViewDelegate {
   private let textView: SynoraTextInputView
   public var onTextChange: (@MainActor (String) -> Void)?
   public var onSelectionChange: (@MainActor (NSRange) -> Void)?
+  public var onReturn: (@MainActor (NSRange) -> Bool)?
+  public var onBackspace: (@MainActor (NSRange) -> Bool)?
+  private let scrollView: NSScrollView
   private var pendingMarkedTextChange = false
   private var lastEmittedString = ""
 
@@ -1747,12 +1762,14 @@ public final class SynoraTextView: NSView, NSTextViewDelegate {
 
   public init() {
     textView = SynoraTextInputView(usingTextLayoutManager: true)
+    scrollView = NSScrollView()
     super.init(frame: .zero)
     configure()
   }
 
   required init?(coder: NSCoder) {
     textView = SynoraTextInputView(usingTextLayoutManager: true)
+    scrollView = NSScrollView()
     super.init(coder: coder)
     configure()
   }
@@ -1813,12 +1830,25 @@ public final class SynoraTextView: NSView, NSTextViewDelegate {
         if !marked { self.flushMarkedTextChange() }
       }
     }
+    textView.onReturn = { [weak self] selection in
+      guard let self else { return false }
+      return self.onReturn?(selection) ?? false
+    }
+    textView.onBackspace = { [weak self] selection in
+      guard let self else { return false }
+      return self.onBackspace?(selection) ?? false
+    }
     textView.onPaint = { [weak self] in self?.endPaintSignpost() }
     textView.setAccessibilityRole(.textArea)
     textView.setAccessibilityLabel("Record body")
     textView.setAccessibilityIdentifier("editor-body")
     textView.setAccessibilityHelp("Edit the selected record")
-    addSubview(textView)
+    scrollView.documentView = textView
+    scrollView.hasVerticalScroller = true
+    scrollView.hasHorizontalScroller = false
+    scrollView.autohidesScrollers = true
+    scrollView.drawsBackground = false
+    addSubview(scrollView)
     setAccessibilityRole(.group)
     setAccessibilityIdentifier("editor-body-container")
   }
@@ -1864,7 +1894,12 @@ public final class SynoraTextView: NSView, NSTextViewDelegate {
 
   public override func layout() {
     super.layout()
-    textView.frame = bounds
+    scrollView.frame = bounds
+    textView.frame = NSRect(
+      x: 0,
+      y: 0,
+      width: max(bounds.width, 1),
+      height: max(bounds.height, textView.fittingSize.height))
   }
 }
 #endif
