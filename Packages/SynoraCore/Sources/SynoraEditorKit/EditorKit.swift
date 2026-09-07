@@ -223,12 +223,133 @@ public struct EditorSession: Sendable {
 
 public enum MarkdownShortcut {
   public static func block(for line: String) -> (type: BlockType, text: String)? {
+    if line == "---" { return (.divider, "") }
     let shortcuts: [(String, BlockType)] = [
       ("### ", .heading3), ("## ", .heading2), ("# ", .heading1),
-      ("- [ ] ", .task), ("- ", .bulletedList), ("> ", .quote), ("---", .divider),
+      ("- [ ] ", .task), ("- [x] ", .task), ("- [X] ", .task),
+      ("- ", .bulletedList), ("> ", .quote),
     ]
-    guard let match = shortcuts.first(where: { line.hasPrefix($0.0) }) else { return nil }
-    return (match.1, String(line.dropFirst(match.0.count)))
+    if let match = shortcuts.first(where: { line.hasPrefix($0.0) }) {
+      return (match.1, String(line.dropFirst(match.0.count)))
+    }
+    if let dot = line.firstIndex(of: "."),
+      line[..<dot].allSatisfy(\.isNumber), line[line.index(after: dot)...].hasPrefix(" ")
+    {
+      return (.numberedList, String(line[line.index(dot, offsetBy: 2)...]))
+    }
+    if line.hasPrefix("```") { return (.code, String(line.dropFirst(3))) }
+    return nil
+  }
+
+  public static func isDisabled(inCodeBlock: Bool, markedText: Bool) -> Bool {
+    inCodeBlock || markedText
+  }
+}
+
+public enum SlashCommand: String, CaseIterable, Hashable, Sendable {
+  case paragraph, heading1, heading2, heading3, bulletedList, numberedList, task
+  case quote, code, divider, table, toggle, callout, image, gallery, video, audio, pdf, file, link
+
+  public var blockType: BlockType {
+    switch self {
+    case .paragraph: .paragraph
+    case .heading1: .heading1
+    case .heading2: .heading2
+    case .heading3: .heading3
+    case .bulletedList: .bulletedList
+    case .numberedList: .numberedList
+    case .task: .task
+    case .quote: .quote
+    case .code: .code
+    case .divider: .divider
+    case .table: .table
+    case .toggle: .toggle
+    case .callout: .callout
+    case .image: .image
+    case .gallery: .gallery
+    case .video: .video
+    case .audio: .audio
+    case .pdf: .pdf
+    case .file: .file
+    case .link: .link
+    }
+  }
+
+  public var title: String {
+    switch self {
+    case .heading1: "Heading 1"
+    case .heading2: "Heading 2"
+    case .heading3: "Heading 3"
+    case .bulletedList: "Bulleted list"
+    case .numberedList: "Numbered list"
+    case .task: "Task"
+    case .quote: "Quote"
+    case .code: "Code"
+    case .divider: "Divider"
+    case .table: "Table"
+    case .toggle: "Toggle"
+    case .callout: "Callout"
+    case .image: "Image"
+    case .gallery: "Gallery"
+    case .video: "Video"
+    case .audio: "Audio"
+    case .pdf: "PDF"
+    case .file: "File"
+    case .link: "Link"
+    case .paragraph: "Paragraph"
+    }
+  }
+
+  public static func matching(_ query: String) -> [Self] {
+    let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !normalized.isEmpty else { return allCases }
+    return allCases.filter { $0.rawValue.localizedCaseInsensitiveContains(normalized) || $0.title.localizedCaseInsensitiveContains(normalized) }
+  }
+}
+
+public struct RecordReference: Hashable, Sendable {
+  public let targetID: UUID
+  public let range: NSRange
+
+  public init(targetID: UUID, range: NSRange) {
+    self.targetID = targetID
+    self.range = range
+  }
+}
+
+public enum ReferenceParser {
+  public static func recordReferences(in text: String) -> [RecordReference] {
+    let source = text as NSString
+    var result: [RecordReference] = []
+    var cursor = 0
+    while cursor < source.length {
+      let open = source.range(of: "[[", options: [], range: NSRange(location: cursor, length: source.length - cursor))
+      guard open.location != NSNotFound else { break }
+      let valueStart = NSMaxRange(open)
+      let close = source.range(of: "]]", options: [], range: NSRange(location: valueStart, length: source.length - valueStart))
+      guard close.location != NSNotFound else { break }
+      let value = source.substring(with: NSRange(location: valueStart, length: close.location - valueStart))
+      if let targetID = UUID(uuidString: value) {
+        result.append(RecordReference(targetID: targetID, range: NSRange(location: open.location, length: NSMaxRange(close) - open.location)))
+      }
+      cursor = NSMaxRange(close)
+    }
+    return result
+  }
+}
+
+public enum HTMLPasteSanitizer {
+  public static func plainText(_ html: String) -> String {
+    var value = html
+    value = value.replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: .regularExpression)
+    value = value.replacingOccurrences(of: "</p>\\s*<p[^>]*>", with: "\n", options: .regularExpression)
+    value = value.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+    return value
+      .replacingOccurrences(of: "&amp;", with: "&")
+      .replacingOccurrences(of: "&lt;", with: "<")
+      .replacingOccurrences(of: "&gt;", with: ">")
+      .replacingOccurrences(of: "&quot;", with: "\"")
+      .replacingOccurrences(of: "&#39;", with: "'")
   }
 }
 
@@ -256,6 +377,8 @@ public final class SynoraTextView: NSView, NSTextViewDelegate {
     get { textView.string }
     set { textView.string = newValue }
   }
+
+  public var usesTextLayoutManager: Bool { textView.textLayoutManager != nil }
 
   public func setDocumentText(_ text: String) {
     let selection = textView.selectedRange()

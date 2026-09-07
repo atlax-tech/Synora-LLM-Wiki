@@ -57,3 +57,16 @@ func textStorageAdapterReplacesAcrossBlocksAndSessionUndoesIt() throws {
   #expect(try session.undo() == document)
   #expect(try session.redo() == updated)
 }
+
+@Test
+func markdownSlashReferencesAndPasteRemainDeterministic() {
+  #expect(MarkdownShortcut.block(for: "12. item")?.type == .numberedList)
+  #expect(MarkdownShortcut.block(for: "```swift")?.type == .code)
+  #expect(MarkdownShortcut.block(for: "---")?.text == "")
+  #expect(SlashCommand.matching("head").map(\.blockType) == [.heading1, .heading2, .heading3])
+  let id = UUID(uuidString: "00000000-0000-4000-8000-000000000099")!
+  let references = ReferenceParser.recordReferences(in: "see [[\(id.uuidString)]]")
+  #expect(references.count == 1)
+  #expect(references[0].targetID == id)
+  #expect(HTMLPasteSanitizer.plainText("<p>A</p><p>B &amp; C</p>") == "A\nB & C")
+}

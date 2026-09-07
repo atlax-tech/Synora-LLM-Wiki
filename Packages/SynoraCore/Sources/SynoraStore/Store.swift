@@ -31,6 +31,18 @@ public struct HistoryEntry: Hashable, Sendable {
   }
 }
 
+public struct HistoryVersion: Hashable, Sendable {
+  public let entry: HistoryEntry
+  public let record: DomainRecord
+  public let document: BlockDocument
+
+  public init(entry: HistoryEntry, record: DomainRecord, document: BlockDocument) {
+    self.entry = entry
+    self.record = record
+    self.document = document
+  }
+}
+
 public enum ProductStoreError: Error, Equatable, Sendable {
   case missingRecord
   case invalidDocument
@@ -45,7 +57,8 @@ public final class ProductStore: @unchecked Sendable {
   private let pool: DatabasePool
   private let clock: any Clock
   private let ids: any IDGenerator
-  private var redoStack: [ChangePayload] = []
+  private var redoStack: [UUID: [ChangePayload]] = [:]
+  private let redoLock = NSLock()
 
   public init(
     path: String,
@@ -177,7 +190,9 @@ public final class ProductStore: @unchecked Sendable {
         return receipt
       }
     }
-    redoStack.removeAll()
+    redoLock.lock()
+    redoStack[record.id] = nil
+    redoLock.unlock()
     return result
   }
 
@@ -213,6 +228,39 @@ public final class ProductStore: @unchecked Sendable {
     }
   }
 
+  public func version(recordID: UUID, sequence: Int64) throws -> HistoryVersion? {
+    try pool.read { db in
+      guard let row = try Row.fetchOne(
+        db,
+        sql: "SELECT sequence, timestamp, entity_revision, payload FROM operations WHERE entity_id = ? AND kind = 'document.save' AND sequence = ?",
+        arguments: [recordID.uuidString, sequence]),
+        let payload: Data = row["payload"]
+      else { return nil }
+      let change = try Self.decode(ChangePayload.self, from: payload)
+      let entry = HistoryEntry(
+        sequence: row["sequence"], timestamp: Date(timeIntervalSince1970: row["timestamp"]),
+        revision: row["entity_revision"], title: change.afterRecord.title)
+      return HistoryVersion(entry: entry, record: change.afterRecord, document: change.afterDocument)
+    }
+  }
+
+  @discardableResult
+  public func restore(
+    recordID: UUID,
+    sequence: Int64,
+    operationID: UUID? = nil
+  ) throws -> StoreReceipt {
+    guard let version = try version(recordID: recordID, sequence: sequence),
+      let current = try record(id: recordID)
+    else { throw ProductStoreError.missingRecord }
+    return try save(
+      record: version.record,
+      document: version.document,
+      expectedRevision: current.revision,
+      operationID: operationID
+    )
+  }
+
   @discardableResult
   public func undo(recordID: UUID, operationID: UUID? = nil) throws -> StoreReceipt {
     guard let latest = try latestChange(recordID: recordID), let before = latest.beforeRecord,
@@ -221,14 +269,19 @@ public final class ProductStore: @unchecked Sendable {
     let receipt = try save(
       record: before, document: beforeDocument, expectedRevision: current.revision,
       operationID: operationID)
-    redoStack.append(latest)
+    redoLock.lock()
+    redoStack[recordID, default: []].append(latest)
+    redoLock.unlock()
     return receipt
   }
 
   @discardableResult
   public func redo(recordID: UUID, operationID: UUID? = nil) throws -> StoreReceipt {
-    guard let change = redoStack.popLast(), change.afterRecord.id == recordID,
-      let current = try record(id: recordID)
+    redoLock.lock()
+    let change = redoStack[recordID]?.popLast()
+    if redoStack[recordID]?.isEmpty == true { redoStack[recordID] = nil }
+    redoLock.unlock()
+    guard let change, change.afterRecord.id == recordID, let current = try record(id: recordID)
     else { throw ProductStoreError.noRedo }
     return try save(
       record: change.afterRecord, document: change.afterDocument, expectedRevision: current.revision,
@@ -248,6 +301,29 @@ public final class ProductStore: @unchecked Sendable {
         sql: "INSERT OR REPLACE INTO snapshots (up_to_sequence, normalized_state, sha256) VALUES (?, ?, ?)",
         arguments: [snapshot.upToSequence, snapshot.normalizedState, snapshot.sha256])
       return snapshot
+    }
+  }
+
+  public func latestSnapshot() throws -> Snapshot? {
+    try pool.read { db in
+      guard let row = try Row.fetchOne(
+        db,
+        sql: "SELECT up_to_sequence, normalized_state, sha256 FROM snapshots ORDER BY up_to_sequence DESC LIMIT 1"),
+        let sequence: Int64 = row["up_to_sequence"],
+        let state: Data = row["normalized_state"],
+        let sha256: String = row["sha256"]
+      else { return nil }
+      let snapshot = Snapshot(upToSequence: sequence, normalizedState: state)
+      guard snapshot.sha256 == sha256, snapshot.isValid() else {
+        throw ProductStoreError.invalidSnapshot
+      }
+      return snapshot
+    }
+  }
+
+  public func stateDigest() throws -> String {
+    try pool.read { db in
+      Self.fingerprint(try Self.normalizedState(db))
     }
   }
 
@@ -312,7 +388,15 @@ public final class ProductStore: @unchecked Sendable {
         operation.entityID.uuidString, operation.entityRevision, operation.kind, operation.payload,
         operation.timestamp.timeIntervalSince1970, operation.previousHash, operation.hash, requestHash,
       ])
-    return try mutate(StoreReceipt(operationID: operationID, sequence: sequence, revision: revision))
+    let receipt = try mutate(StoreReceipt(operationID: operationID, sequence: sequence, revision: revision))
+    if sequence.isMultiple(of: 100) {
+      let state = try Self.normalizedState(db)
+      let snapshot = Snapshot(upToSequence: sequence, normalizedState: state)
+      try db.execute(
+        sql: "INSERT OR REPLACE INTO snapshots (up_to_sequence, normalized_state, sha256) VALUES (?, ?, ?)",
+        arguments: [snapshot.upToSequence, snapshot.normalizedState, snapshot.sha256])
+    }
+    return receipt
   }
 
   private struct Request: Codable {
