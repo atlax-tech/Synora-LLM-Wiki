@@ -186,6 +186,13 @@ def reject(message):
 def percentile(values, fraction):
     return sorted(values)[math.ceil(len(values) * fraction) - 1]
 
+def valid_artifact(path):
+    if path.is_file():
+        return path.stat().st_size > 0
+    if path.is_dir():
+        return any(path.iterdir())
+    return False
+
 try:
     sha = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
     diff = subprocess.check_output(["git", "-C", str(root), "diff", "HEAD", "--binary"])
@@ -232,7 +239,7 @@ try:
                     reject(name + ": invalid artifact path")
                     continue
                 path = base / artifact
-                if not path.is_file() or path.stat().st_size == 0:
+                if not valid_artifact(path):
                     reject(name + ": missing or empty artifact " + artifact)
         if name == "keystrokeToPaint":
             if check.get("modelOnly") is not False or check.get("realWindow") is not True:
