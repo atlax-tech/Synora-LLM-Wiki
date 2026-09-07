@@ -106,7 +106,7 @@ struct RecordEditorView: View {
       if let assetStore = model.assetStore {
         let blocks = model.mediaBlocks(for: record)
         if !blocks.isEmpty {
-          RecordMediaStack(
+          StableRecordMediaStack(
             blocks: blocks,
             assets: model.mediaAssets(for: record),
             assetStore: assetStore,
@@ -123,6 +123,7 @@ struct RecordEditorView: View {
             onLayoutChange: { blockID, layout in
               model.setMediaLayout(layout, in: blockID, for: record)
             })
+            .equatable()
         }
       }
 
@@ -274,6 +275,33 @@ struct RecordEditorView: View {
   }
 }
 
+private struct StableRecordMediaStack: View, Equatable {
+  let blocks: [Block]
+  let assets: [UUID: Asset]
+  let assetStore: AssetStore
+  let onReplace: (UUID, UUID) -> Void
+  let onRemove: (UUID, UUID) -> Void
+  let onCaptionChange: (UUID, UUID, String) -> Void
+  let onLayoutChange: (UUID, MediaLayout) -> Void
+
+  nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.blocks == rhs.blocks
+      && lhs.assets == rhs.assets
+      && lhs.assetStore.rootURL == rhs.assetStore.rootURL
+  }
+
+  var body: some View {
+    RecordMediaStack(
+      blocks: blocks,
+      assets: assets,
+      assetStore: assetStore,
+      onReplace: onReplace,
+      onRemove: onRemove,
+      onCaptionChange: onCaptionChange,
+      onLayoutChange: onLayoutChange)
+  }
+}
+
 private struct AttachmentReplacement: Equatable {
   let blockID: UUID
   let assetID: UUID
@@ -357,9 +385,11 @@ private struct RecordMediaStack: View {
             .accessibilityValue(layoutTitle(currentLayout))
           }
         }
-        ForEach(placements.sorted(by: { $0.order < $1.order }), id: \.assetID) { placement in
-          if let asset = assets[placement.assetID] {
-            mediaAsset(asset, placement: placement, block: block)
+        LazyVStack(alignment: .leading, spacing: SynoraSpacing.sm) {
+          ForEach(placements.sorted(by: { $0.order < $1.order }), id: \.assetID) { placement in
+            if let asset = assets[placement.assetID] {
+              mediaAsset(asset, placement: placement, block: block)
+            }
           }
         }
       }

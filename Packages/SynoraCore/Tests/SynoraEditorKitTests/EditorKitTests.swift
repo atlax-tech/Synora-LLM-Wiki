@@ -59,6 +59,26 @@ func textStorageAdapterReplacesAcrossBlocksAndSessionUndoesIt() throws {
 }
 
 @Test
+func textStorageAdapterIncludesNestedBlocksAndAdoptKeepsUndoHistory() throws {
+  let recordID = UUID()
+  let parentID = UUID()
+  let childID = UUID()
+  let document = try BlockDocument(recordID: recordID, blocks: [
+    Block(id: parentID, recordID: recordID, position: 0, text: "parent", type: .toggle),
+    Block(id: childID, recordID: recordID, position: 0, text: "child", parentID: parentID),
+  ])
+  #expect(TextStorageAdapter(document: document).text == "parent\nchild")
+
+  var session = EditorSession(document: document)
+  let edited = try session.apply(
+    range: NSRange(location: 0, length: ("parent" as NSString).length), replacement: "updated")
+  let mediaDocument = try edited.settingType(.callout, for: parentID)
+  _ = session.adopt(mediaDocument)
+  #expect(session.document.block(id: parentID)?.type == .callout)
+  #expect(try session.undo() == edited)
+}
+
+@Test
 func markdownSlashReferencesAndPasteRemainDeterministic() {
   #expect(MarkdownShortcut.block(for: "12. item")?.type == .numberedList)
   #expect(MarkdownShortcut.block(for: "```swift")?.type == .code)

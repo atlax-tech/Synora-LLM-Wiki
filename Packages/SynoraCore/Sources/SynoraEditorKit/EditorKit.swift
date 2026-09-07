@@ -678,6 +678,13 @@ public struct EditorSession: Sendable {
 
   public var focusedBlockID: UUID? { focus?.blockID }
 
+  /// Adopts a document produced by an asynchronous media operation while
+  /// keeping the existing editor undo history.
+  @discardableResult
+  public mutating func adopt(_ next: BlockDocument) -> BlockDocument {
+    commit(next)
+  }
+
   public mutating func focus(on blockID: UUID, atUTF16Offset offset: Int = 0) throws {
     guard let block = document.block(id: blockID), offset >= 0 else {
       throw EditorError.invalidSelection

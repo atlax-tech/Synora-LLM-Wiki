@@ -742,6 +742,14 @@ final class ShellModel {
     assetStore: AssetStore
   ) {
     saveTasks[record.id]?.cancel()
+    if var session = editorSessions[record.id] {
+      _ = session.adopt(document)
+      editorSessions[record.id] = session
+    } else {
+      editorSessions[record.id] = EditorSession(document: document)
+    }
+    documentsByRecordID[record.id] = document
+    editorTextByRecordID[record.id] = TextStorageAdapter(document: document).text
     editorSaveState = .saving
     let domainRecord = makeDomainRecord(from: record, title: title)
     let expectedRevision = record.revision
@@ -764,13 +772,18 @@ final class ShellModel {
         var savedDomainRecord = domainRecord
         savedDomainRecord.revision = receipt.revision
         if let asset { self.assetsByID[asset.id] = asset }
-        self.documentsByRecordID[record.id] = document
         self.replaceRecord(
           Record(
             domain: savedDomainRecord,
             summary: document.children().first?.text ?? "",
             thumbnailName: record.thumbnailName))
-        self.editorSaveState = .saved
+        if self.documentsByRecordID[record.id] == document,
+          self.editorTitleByRecordID[record.id] == title
+        {
+          self.editorSaveState = .saved
+        } else {
+          self.scheduleSave(for: record.id, delay: 0)
+        }
       } catch is RevisionError {
         self?.editorSaveState = .conflict
       } catch is CancellationError {
@@ -814,13 +827,16 @@ final class ShellModel {
           }
           return (record, receipt.revision)
         }.value
-        guard let self, !Task.isCancelled else { return }
+        // A cancelled delay may still have committed in the detached store
+        // task. Apply its revision before scheduling the newer local draft.
+        guard let self else { return }
         self.applySaveSuccess(
           recordID: recordID,
           savedRecord: saved.0,
           revision: saved.1,
           capturedTitle: title,
-          capturedText: text
+          capturedText: text,
+          capturedDocument: document
         )
       } catch is RevisionError {
         self?.editorSaveState = .conflict
@@ -836,7 +852,8 @@ final class ShellModel {
     savedRecord: SynoraDomain.Record,
     revision: Int,
     capturedTitle: String,
-    capturedText: String
+    capturedText: String,
+    capturedDocument: BlockDocument
   ) {
     replaceRecord(
       Record(
@@ -846,7 +863,8 @@ final class ShellModel {
       )
     )
     if editorTitleByRecordID[recordID] == capturedTitle,
-      editorTextByRecordID[recordID] == capturedText
+      editorTextByRecordID[recordID] == capturedText,
+      documentsByRecordID[recordID] == capturedDocument
     {
       editorSaveState = .saved
     } else {
@@ -934,7 +952,7 @@ final class ShellModel {
   }
 
   private func text(for document: BlockDocument?) -> String {
-    document?.children().map(\.text).joined(separator: "\n") ?? ""
+    document.map { TextStorageAdapter(document: $0).text } ?? ""
   }
 
   private static func mediaBlockType(for kind: AssetPreviewKind) -> BlockType {
