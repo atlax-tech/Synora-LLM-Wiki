@@ -5,7 +5,7 @@ root_dir="${0:A:h}/.."
 mode="${1:-}"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 artifact_dir="${SYNORA_ARTIFACT_DIR:-${TMPDIR:-/private/tmp}/synora-wiki-p1-$run_id}"
-derived_data="$artifact_dir/xcode"
+derived_data="${SYNORA_DERIVED_DATA:-$artifact_dir/xcode}"
 mkdir -p "$artifact_dir"
 
 if [[ "$mode" != unit && "$mode" != ui && "$mode" != visual && "$mode" != stage ]]; then
@@ -39,12 +39,12 @@ run_visual() {
   local candidates="$artifact_dir/candidates"
   mkdir -p "$candidates"
   SYNORA_VISUAL_OUTPUT_DIR="$candidates" \
-    xcode_test SynoraWikiUITests/SynoraWikiUITests/testCapturesThreeShellCandidates \
+    xcode_test SynoraWikiUITests/SynoraWikiUITests/testCapturesSixShellCandidates \
+      -resultBundlePath "$artifact_dir/visual.xcresult" \
     | tee "$artifact_dir/visual-capture.log"
 
-  local result_bundle
-  result_bundle="$(find "$derived_data/Logs/Test" -maxdepth 1 -name '*.xcresult' -print -quit)"
-  [[ -n "$result_bundle" ]] || {
+  local result_bundle="$artifact_dir/visual.xcresult"
+  [[ -d "$result_bundle" ]] || {
     print -u2 "visual test did not produce an xcresult bundle"
     exit 1
   }
@@ -67,9 +67,18 @@ for test in manifest:
     for attachment in test.get("attachments", []):
         suggested = attachment.get("suggestedHumanReadableName", "")
         prefix = suggested.split("_0_", 1)[0]
-        if prefix in {"shell-compact", "shell-default", "shell-large"}:
+        if prefix in {
+            "shell-light-compact",
+            "shell-light-default",
+            "shell-light-large",
+            "shell-dark-compact",
+            "shell-dark-default",
+            "shell-dark-large",
+        }:
             source = export_dir / attachment["exportedFileName"]
-            shutil.copyfile(source, candidates_dir / f"{prefix}.png")
+            target = candidates_dir / f"{prefix}.png"
+            if not target.is_file():
+                shutil.copyfile(source, target)
 
 metadata_lines = [
     line.split("=", 1)[1].strip()
@@ -83,13 +92,30 @@ metadata = base64.b64decode(metadata_lines[-1])
 PY
 
   local baseline_args=()
-  if [[ -n "${SYNORA_VISUAL_BASELINE_DIR:-}" ]]; then
+  if [[ "$mode" == stage ]]; then
+    local stage_baseline="${SYNORA_VISUAL_BASELINE_DIR:-$root_dir/Tests/VisualBaselines/P1}"
+    [[ -d "$stage_baseline" ]] || {
+      print -u2 "stage baseline directory does not exist: $stage_baseline"
+      exit 1
+    }
+    baseline_args+=(--baseline "$stage_baseline")
+    baseline_args+=(--require-baseline)
+    baseline_args+=(--allow-display-clamp)
+  fi
+  if [[ "$mode" != stage && -n "${SYNORA_VISUAL_BASELINE_DIR:-}" ]]; then
     baseline_args+=(--baseline "$SYNORA_VISUAL_BASELINE_DIR")
   fi
   python3 "$root_dir/script/p1_visual.py" \
     --candidates "$candidates" \
     --metadata "$candidates/visual-metadata.json" \
-    --report "$artifact_dir/visual-report.json" \
+    --report "$artifact_dir/visual-report-light.json" \
+    --theme light \
+    "${baseline_args[@]}"
+  python3 "$root_dir/script/p1_visual.py" \
+    --candidates "$candidates" \
+    --metadata "$candidates/visual-metadata.json" \
+    --report "$artifact_dir/visual-report-dark.json" \
+    --theme dark \
     "${baseline_args[@]}"
 }
 

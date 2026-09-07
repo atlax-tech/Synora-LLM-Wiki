@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate P1 screenshot dimensions and optionally compare an approved baseline."""
+"""Validate P1 screenshot dimensions and optionally compare a baseline."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ SIZES = {
     "large": (1728, 1117),
 }
 SSIM_THRESHOLD = 0.95
+GEOMETRY_TOLERANCE_POINTS = 2.0
 CONTENT_RE = re.compile(
     r"(?P<width>\d+(?:\.\d+)?) by (?P<height>\d+(?:\.\d+)?) points, "
     r"(?P<scale>\d+(?:\.\d+)?)x scale"
@@ -186,12 +187,19 @@ def main() -> int:
     parser.add_argument("--metadata", type=Path)
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--theme", choices=("light", "dark"))
     parser.add_argument("--require-baseline", action="store_true")
+    parser.add_argument(
+        "--allow-display-clamp",
+        action="store_true",
+        help="accept a host display height clamp for the large snapshot",
+    )
     args = parser.parse_args()
 
     metadata = read_metadata(args.metadata) if args.metadata else {}
     report: dict[str, object] = {
         "threshold": SSIM_THRESHOLD,
+        "theme": args.theme,
         "candidateDirectory": str(args.candidates),
         "baselineDirectory": str(args.baseline) if args.baseline else None,
         "sizes": {},
@@ -200,7 +208,8 @@ def main() -> int:
     compared = False
 
     for name, expected in SIZES.items():
-        image = args.candidates / f"shell-{name}.png"
+        prefix = f"{args.theme}-" if args.theme else ""
+        image = args.candidates / f"shell-{prefix}{name}.png"
         entry: dict[str, object] = {
             "requestedWindowPoints": {"width": expected[0], "height": expected[1]}
         }
@@ -210,7 +219,7 @@ def main() -> int:
             report["sizes"][name] = entry
             continue
         try:
-            entry["candidate"] = observation(metadata, name, image)
+            entry["candidate"] = observation(metadata, f"{prefix}{name}", image)
         except (OSError, ValueError, struct.error, zlib.error) as error:
             entry["status"] = "INVALID"
             entry["error"] = str(error)
@@ -223,7 +232,33 @@ def main() -> int:
             width_delta = abs(float(frame["width"]) - expected[0])
             height_delta = abs(float(frame["height"]) - expected[1])
             entry["windowDeltaPoints"] = {"width": width_delta, "height": height_delta}
-            entry["windowGeometryStatus"] = "MATCH" if width_delta <= 1 and height_delta <= 1 else "CLAMPED"
+            entry["windowGeometryStatus"] = (
+                "MATCH"
+                if width_delta <= GEOMETRY_TOLERANCE_POINTS
+                and height_delta <= GEOMETRY_TOLERANCE_POINTS
+                else "CLAMPED"
+            )
+            if entry["windowGeometryStatus"] != "MATCH":
+                display_clamp = (
+                    args.allow_display_clamp
+                    and name == "large"
+                    and width_delta <= GEOMETRY_TOLERANCE_POINTS
+                    and float(frame["height"]) < expected[1]
+                )
+                if display_clamp:
+                    entry["windowGeometryStatus"] = "CLAMPED_ENVIRONMENT"
+                    entry["environmentLimit"] = (
+                        f"host display constrained requested height to {frame['height']:.0f} pt"
+                    )
+                    report.setdefault("environmentLimitations", []).append(
+                        f"{name} height clamped by host display: "
+                        f"requested {expected[1]} pt, actual {frame['height']:.0f} pt"
+                    )
+                else:
+                    failures.append(
+                        f"{name} window geometry is CLAMPED: "
+                        f"{width_delta:.2f}x{height_delta:.2f} pt"
+                    )
         else:
             entry["windowGeometryStatus"] = "UNREPORTED"
 
@@ -233,7 +268,8 @@ def main() -> int:
             entry["contentGeometryStatus"] = "UNREPORTED"
 
         if args.baseline:
-            baseline = args.baseline / f"shell-{name}.png"
+            baseline_root = args.baseline / args.theme if args.theme else args.baseline
+            baseline = baseline_root / f"shell-{name}.png"
             if not baseline.is_file():
                 entry["status"] = "BASELINE_MISSING"
                 failures.append(f"missing baseline: {baseline}")
