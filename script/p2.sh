@@ -158,10 +158,14 @@ run_visual() {
 }
 
 # stage consumes existing evidence; it never launches builds or Instruments.
-# SYNORA_P2_STAGE_EVIDENCE points to JSON with schemaVersion=1, sourceSHA,
-# trackedDiffSHA256 (SHA256 of git diff HEAD --binary), configuration,
-# environment (nonempty object), and checks keyed by the names below.
-# Each check has status="PASS" and artifacts=[paths relative to the manifest].
+# SYNORA_P2_STAGE_EVIDENCE points to JSON with schemaVersion=1, the original
+# sourceSHA/trackedDiffSHA256, configuration, environment, and checks keyed by
+# the names below. Each check carries its relevant validatedFiles and a
+# deterministic validatedContentSHA256. Commit and documentation changes do
+# not invalidate evidence when that check's validated content is unchanged;
+# relevant source/test/build changes do.
+# Each check has status="PASS", command, result, configuration, environment,
+# and artifacts=[paths relative to the manifest].
 # keystrokeToPaint also has modelOnly=false, realWindow=true, textLength>=100000,
 # mediaCount>=200, and rounds (>=3), each containing raw nonnegative millisecond
 # arrays inputMs (>=100) and firstScreenMs (>=30). Samples must not be filtered.
@@ -190,14 +194,43 @@ def valid_artifact(path):
     if path.is_file():
         return path.stat().st_size > 0
     if path.is_dir():
-        return any(path.iterdir())
+        return any(
+            candidate.is_file() and candidate.stat().st_size > 0
+            for candidate in path.rglob("*")
+        )
     return False
+
+def valid_hex(value, length):
+    return (
+        isinstance(value, str)
+        and len(value) == length
+        and all(character in "0123456789abcdefABCDEF" for character in value)
+    )
+
+def content_fingerprint(paths):
+    digest = hashlib.sha256()
+    for relative in sorted(paths):
+        path = (root / relative).resolve()
+        try:
+            path.relative_to(root.resolve())
+        except ValueError:
+            reject("validated file escapes repository: " + relative)
+            continue
+        if not path.is_file():
+            reject("validated file is missing: " + relative)
+            continue
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+        digest.update(b"\n")
+    return digest.hexdigest()
 
 try:
     sha = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
     diff = subprocess.check_output(["git", "-C", str(root), "diff", "HEAD", "--binary"])
     fingerprint = hashlib.sha256(diff).hexdigest()
-    report.update(sourceSHA=sha, trackedDiffSHA256=fingerprint)
+    report.update(sourceSHA=sha, trackedDiffSHA256=fingerprint,
+                  currentSourceSHA=sha, currentTrackedDiffSHA256=fingerprint)
     manifest = os.environ.get("SYNORA_P2_STAGE_EVIDENCE", "")
     evidence = {}
     base = root
@@ -214,8 +247,10 @@ try:
             evidence = {}
     if evidence.get("schemaVersion") != 1:
         reject("schemaVersion must be 1")
-    if evidence.get("sourceSHA") != sha or evidence.get("trackedDiffSHA256") != fingerprint:
-        reject("evidence does not match current HEAD and tracked working tree")
+    if not valid_hex(evidence.get("sourceSHA"), 40):
+        reject("sourceSHA must preserve the validated 40-character commit SHA")
+    if not valid_hex(evidence.get("trackedDiffSHA256"), 64):
+        reject("trackedDiffSHA256 must preserve the validated working-tree SHA")
     if not isinstance(evidence.get("configuration"), str) or not evidence["configuration"].strip():
         reject("configuration is missing")
     if not isinstance(evidence.get("environment"), dict) or not evidence["environment"]:
@@ -230,15 +265,37 @@ try:
             check = {}
         if check.get("status") != "PASS":
             reject(name + ": missing or not PASS")
+        for field in ("command", "result", "configuration"):
+            if not isinstance(check.get(field), str) or not check[field].strip():
+                reject(name + ": " + field + " is missing")
+        if not isinstance(check.get("environment"), dict) or not check["environment"]:
+            reject(name + ": environment is missing")
+        validated_files = check.get("validatedFiles")
+        if not isinstance(validated_files, list) or not validated_files or not all(
+            isinstance(path, str) and path and not Path(path).is_absolute()
+            and ".." not in Path(path).parts
+            for path in validated_files
+        ):
+            reject(name + ": validatedFiles must list relative source, test, and build files")
+        else:
+            current_content_fingerprint = content_fingerprint(validated_files)
+            if check.get("validatedContentSHA256") != current_content_fingerprint:
+                reject(name + ": validated source/test/build content fingerprint changed")
         artifacts = check.get("artifacts")
         if not isinstance(artifacts, list) or not artifacts:
             reject(name + ": raw artifacts missing")
         else:
             for artifact in artifacts:
-                if not isinstance(artifact, str) or not artifact:
+                if (not isinstance(artifact, str) or not artifact
+                    or Path(artifact).is_absolute() or ".." in Path(artifact).parts):
                     reject(name + ": invalid artifact path")
                     continue
-                path = base / artifact
+                path = (base / artifact).resolve()
+                try:
+                    path.relative_to(base)
+                except ValueError:
+                    reject(name + ": artifact escapes evidence directory " + artifact)
+                    continue
                 if not valid_artifact(path):
                     reject(name + ": missing or empty artifact " + artifact)
         if name == "keystrokeToPaint":
