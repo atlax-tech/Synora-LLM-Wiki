@@ -23,18 +23,30 @@ public struct TextStorageAdapter: Sendable {
   public let text: String
   public let ranges: [BlockTextRange]
 
-  public init(document: BlockDocument) {
+  public init(document: BlockDocument, sourceText: String? = nil) {
     self.document = document
-    var value = ""
+    let blocks = Self.linearizedBlocks(document)
+    let expectedLength = blocks.reduce(0) { partial, block in
+      partial + (block.text as NSString).length
+    } + max(blocks.count - 1, 0)
+    let cachedText = sourceText.flatMap { source in
+      (source as NSString).length == expectedLength ? source : nil
+    }
+    var builtValue = cachedText ?? ""
     var mapped: [BlockTextRange] = []
-    for (index, block) in Self.linearizedBlocks(document).enumerated() {
-      if index > 0 { value.append("\n") }
-      let start = (value as NSString).length
-      value.append(block.text)
+    var offset = 0
+    for (index, block) in blocks.enumerated() {
+      if index > 0 { offset += 1 }
+      let start = offset
       mapped.append(BlockTextRange(
         blockID: block.id, range: NSRange(location: start, length: (block.text as NSString).length)))
+      offset += (block.text as NSString).length
+      if cachedText == nil {
+        if index > 0 { builtValue.append("\n") }
+        builtValue.append(block.text)
+      }
     }
-    text = value
+    text = builtValue
     ranges = mapped
   }
 
@@ -51,7 +63,8 @@ public struct TextStorageAdapter: Sendable {
       Self.isComposedBoundary(NSMaxRange(range), in: source)
     else { throw EditorError.invalidSelection }
     guard !marked else { return document }
-    let blocks = Self.linearizedBlocks(document)
+    let blocksByID = Dictionary(uniqueKeysWithValues: document.blocks.map { ($0.id, $0) })
+    let blocks = ranges.compactMap { blocksByID[$0.blockID] }
     guard !blocks.isEmpty else {
       let block = Block(id: UUID(), recordID: document.recordID, position: 0, text: replacement)
       return try BlockDocument(recordID: document.recordID, blocks: [block])
@@ -152,9 +165,19 @@ public struct TextStorageAdapter: Sendable {
   }
 
   private static func linearizedBlocks(_ document: BlockDocument) -> [Block] {
+    var childrenByParent: [UUID?: [Block]] = [:]
+    for block in document.blocks {
+      childrenByParent[block.parentID, default: []].append(block)
+    }
+    for parentID in childrenByParent.keys {
+      childrenByParent[parentID]?.sort {
+        ($0.orderKey, $0.id.uuidString) < ($1.orderKey, $1.id.uuidString)
+      }
+    }
+
     func visit(_ parentID: UUID?, hidden: Bool = false) -> [Block] {
       guard !hidden else { return [] }
-      return document.children(of: parentID).flatMap { block in
+      return (childrenByParent[parentID] ?? []).flatMap { block in
         [block] + visit(block.id, hidden: block.isCollapsed)
       }
     }
@@ -744,11 +767,16 @@ public struct EditorSession: Sendable {
   }
 
   @discardableResult
-  public mutating func apply(range: NSRange, replacement: String, marked: Bool = false) throws
+  public mutating func apply(
+    range: NSRange,
+    replacement: String,
+    marked: Bool = false,
+    sourceText: String? = nil
+  ) throws
     -> BlockDocument
   {
     guard !marked else { return document }
-    let next = try TextStorageAdapter(document: document).applying(
+    let next = try TextStorageAdapter(document: document, sourceText: sourceText).applying(
       range: range, replacement: replacement)
     return commit(next)
   }
@@ -1696,7 +1724,6 @@ public enum HTMLPasteSanitizer {
 #if canImport(AppKit)
 private final class SynoraTextInputView: NSTextView {
   var onMarkedTextChanged: ((Bool) -> Void)?
-  var onPaint: (() -> Void)?
   var onReturn: ((NSRange) -> Bool)?
   var onBackspace: ((NSRange) -> Bool)?
   private(set) var composing = false
@@ -1737,16 +1764,13 @@ private final class SynoraTextInputView: NSTextView {
     super.doCommand(by: selector)
   }
 
-  override func draw(_ dirtyRect: NSRect) {
-    super.draw(dirtyRect)
-    onPaint?()
-  }
 }
 
 @MainActor
 public final class SynoraTextView: NSView, NSTextViewDelegate {
   private let textView: SynoraTextInputView
   public var onTextChange: (@MainActor (String) -> Void)?
+  public var onTextEdit: (@MainActor (String, NSRange, String) -> Void)?
   public var onSelectionChange: (@MainActor (NSRange) -> Void)?
   public var onReturn: (@MainActor (NSRange) -> Bool)?
   public var onBackspace: (@MainActor (NSRange) -> Bool)?
@@ -1818,6 +1842,10 @@ public final class SynoraTextView: NSView, NSTextViewDelegate {
     textView.delegate = self
     textView.isRichText = false
     textView.allowsUndo = true
+    // SpellChecker remains available through the editor command path. Avoid
+    // native background scans on every edit; they walk the whole long record.
+    textView.isContinuousSpellCheckingEnabled = false
+    textView.isGrammarCheckingEnabled = false
     textView.drawsBackground = false
     textView.isEditable = true
     textView.isSelectable = true
@@ -1838,7 +1866,6 @@ public final class SynoraTextView: NSView, NSTextViewDelegate {
       guard let self else { return false }
       return self.onBackspace?(selection) ?? false
     }
-    textView.onPaint = { [weak self] in self?.endPaintSignpost() }
     textView.setAccessibilityRole(.textArea)
     textView.setAccessibilityLabel("Record body")
     textView.setAccessibilityIdentifier("editor-body")
@@ -1868,7 +1895,39 @@ public final class SynoraTextView: NSView, NSTextViewDelegate {
     }
     lastEmittedString = value
     beginPaintSignpost()
-    onTextChange?(value)
+    if let storage = textView.textStorage {
+      let editedRange = storage.editedRange
+      let changeInLength = storage.changeInLength
+      let valueLength = (value as NSString).length
+      let replacementRangeIsValid = editedRange.location >= 0
+        && editedRange.length >= 0
+        && NSMaxRange(editedRange) <= valueLength
+      if replacementRangeIsValid {
+        let oldRange = NSRange(
+          location: editedRange.location,
+          length: max(0, editedRange.length - changeInLength))
+        let replacement = (value as NSString).substring(with: editedRange)
+        if let onTextEdit {
+          onTextEdit(value, oldRange, replacement)
+        } else {
+          onTextChange?(value)
+        }
+      } else {
+        onTextChange?(value)
+      }
+    } else {
+      onTextChange?(value)
+    }
+    // TextKit 2 renders through its private viewport subview, so overriding
+    // NSTextView.draw(_:) does not provide a reliable completion callback.
+    // Force the real window's display pass and close the signpost after it
+    // returns, keeping one measured completion per committed input event.
+    textView.needsDisplay = true
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.textView.displayIfNeeded()
+      self.endPaintSignpost()
+    }
   }
 
   private func flushMarkedTextChange() {
@@ -1895,11 +1954,16 @@ public final class SynoraTextView: NSView, NSTextViewDelegate {
   public override func layout() {
     super.layout()
     scrollView.frame = bounds
+    // The text view is already hosted by a native scroll view. Measuring its
+    // complete fitting size on every layout walks the whole document, which
+    // makes a long record turn each keystroke into a full-document layout.
+    // Keep the document view at the viewport size and let TextKit manage the
+    // scrollable text container instead.
     textView.frame = NSRect(
       x: 0,
       y: 0,
       width: max(bounds.width, 1),
-      height: max(bounds.height, textView.fittingSize.height))
+      height: max(bounds.height, 1))
   }
 }
 #endif

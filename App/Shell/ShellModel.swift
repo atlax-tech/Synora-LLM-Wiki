@@ -173,6 +173,10 @@ final class ShellModel {
     return records(for: kind).first { $0.id == id }
   }
 
+  func currentRecord(id: UUID) -> Record? {
+    record(withID: id)
+  }
+
   func editorText(for record: Record) -> String {
     editorTextByRecordID[record.id] ?? text(for: documentsByRecordID[record.id])
   }
@@ -212,14 +216,27 @@ final class ShellModel {
     }
   }
 
-  func setEditorText(_ text: String, for record: Record) {
+  func setEditorText(
+    _ text: String,
+    for record: Record,
+    changeRange: NSRange? = nil,
+    replacement: String? = nil
+  ) {
     ensureEditorState(for: record)
     guard editorTextByRecordID[record.id] != text else { return }
+    let oldText = editorTextByRecordID[record.id]
     editorTextByRecordID[record.id] = text
     if var session = editorSessions[record.id], let oldDocument = documentsByRecordID[record.id] {
-      let oldText = TextStorageAdapter(document: oldDocument).text
-      let change = textChange(from: oldText, to: text)
-      if let document = try? session.apply(range: change.range, replacement: change.replacement) {
+      let sourceText = oldText ?? TextStorageAdapter(document: oldDocument).text
+      let change = if let changeRange, let replacement {
+        (range: changeRange, replacement: replacement)
+      } else {
+        textChange(from: sourceText, to: text)
+      }
+      if let document = try? session.apply(
+        range: change.range,
+        replacement: change.replacement,
+        sourceText: sourceText) {
         editorSessions[record.id] = session
         documentsByRecordID[record.id] = document
       } else if let document = makeDocument(text: text, basedOn: oldDocument, recordID: record.id) {
@@ -1168,6 +1185,7 @@ final class ShellModel {
     let expectedRevision = record.revision
     saveTasks[record.id] = Task { [weak self, store, assetStore] in
       do {
+        guard !Task.isCancelled else { return }
         let receipt = try await Task.detached(priority: .userInitiated) {
           if let asset {
             return try store.saveAsset(
@@ -1182,28 +1200,37 @@ final class ShellModel {
             expectedRevision: expectedRevision)
         }.value
         guard let self else { return }
+        if let asset { self.assetsByID[asset.id] = asset }
+        if Task.isCancelled {
+          self.adoptCommittedRevision(recordID: record.id, revision: receipt.revision)
+          return
+        }
         var savedDomainRecord = domainRecord
         savedDomainRecord.revision = receipt.revision
-        if let asset { self.assetsByID[asset.id] = asset }
-        self.replaceRecord(
-          Record(
-            domain: savedDomainRecord,
-            summary: document.children().first?.text ?? "",
-            thumbnailName: record.thumbnailName))
-        if self.documentsByRecordID[record.id] == document,
-          self.editorTitleByRecordID[record.id] == title
-        {
+        let isCurrent = self.documentsByRecordID[record.id] == document
+          && self.editorTitleByRecordID[record.id] == title
+        if isCurrent {
+          self.replaceRecord(
+            Record(
+              domain: savedDomainRecord,
+              summary: document.children().first?.text ?? "",
+              thumbnailName: record.thumbnailName))
           self.editorSaveState = .saved
         } else {
-          self.scheduleSave(for: record.id, delay: 0)
+          // A newer debounced save owns the current draft. Keep this
+          // transaction's revision without recursively saving the stale copy.
+          self.adoptCommittedRevision(recordID: record.id, revision: receipt.revision)
+          self.editorSaveState = .saving
         }
       } catch is RevisionError {
-        self?.editorSaveState = .conflict
+        if !Task.isCancelled { self?.editorSaveState = .conflict }
       } catch is CancellationError {
       } catch {
-        self?.editorSaveState = .failed
-        if let referenced = try? store.assets() {
-          try? assetStore.recover(referencedAssets: referenced)
+        if !Task.isCancelled {
+          self?.editorSaveState = .failed
+          if let referenced = try? store.assets() {
+            try? assetStore.recover(referencedAssets: referenced)
+          }
         }
       }
     }
@@ -1241,8 +1268,12 @@ final class ShellModel {
           return (record, receipt.revision)
         }.value
         // A cancelled delay may still have committed in the detached store
-        // task. Apply its revision before scheduling the newer local draft.
+        // task. Apply its revision, but never recursively save its stale draft.
         guard let self else { return }
+        if Task.isCancelled {
+          self.adoptCommittedRevision(recordID: recordID, revision: saved.1)
+          return
+        }
         self.applySaveSuccess(
           recordID: recordID,
           savedRecord: saved.0,
@@ -1252,10 +1283,10 @@ final class ShellModel {
           capturedDocument: document
         )
       } catch is RevisionError {
-        self?.editorSaveState = .conflict
+        if !Task.isCancelled { self?.editorSaveState = .conflict }
       } catch is CancellationError {
       } catch {
-        self?.editorSaveState = .failed
+        if !Task.isCancelled { self?.editorSaveState = .failed }
       }
     }
   }
@@ -1268,22 +1299,39 @@ final class ShellModel {
     capturedText: String,
     capturedDocument: BlockDocument
   ) {
-    replaceRecord(
-      Record(
-        domain: savedRecord,
-        summary: documentsByRecordID[recordID]?.children().first?.text ?? "",
-        thumbnailName: record(withID: recordID)?.thumbnailName
+    let isCurrent = editorTitleByRecordID[recordID] == capturedTitle
+      && editorTextByRecordID[recordID] == capturedText
+      && documentsByRecordID[recordID] == capturedDocument
+    if isCurrent {
+      replaceRecord(
+        Record(
+          domain: savedRecord,
+          summary: documentsByRecordID[recordID]?.children().first?.text ?? "",
+          thumbnailName: record(withID: recordID)?.thumbnailName
+        )
       )
-    )
-    if editorTitleByRecordID[recordID] == capturedTitle,
-      editorTextByRecordID[recordID] == capturedText,
-      documentsByRecordID[recordID] == capturedDocument
-    {
       editorSaveState = .saved
     } else {
-      scheduleSave(for: recordID, delay: 0)
+      // A newer debounced save owns the current draft. Keep the committed
+      // revision without recursively saving the stale snapshot.
+      adoptCommittedRevision(recordID: recordID, revision: revision)
+      editorSaveState = .saving
     }
-    _ = revision
+  }
+
+  private func adoptCommittedRevision(recordID: UUID, revision: Int) {
+    guard let current = record(withID: recordID), revision > current.revision else { return }
+    replaceRecord(
+      Record(
+        id: current.id,
+        kind: current.kind,
+        title: current.title,
+        summary: current.summary,
+        modifiedAt: current.modifiedAt,
+        thumbnailName: current.thumbnailName,
+        revision: revision,
+        journalDate: current.journalDate,
+        metadata: current.metadata))
   }
 
   private func replaceRecord(_ replacement: Record) {

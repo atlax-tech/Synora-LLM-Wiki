@@ -14,7 +14,10 @@ func textStorageAdapterMapsUTF16RangesAndEditsOneBlock() throws {
     Block(id: secondID, recordID: recordID, position: 1, text: "second"),
   ])
   let adapter = TextStorageAdapter(document: document)
+  let cachedAdapter = TextStorageAdapter(document: document, sourceText: adapter.text)
   #expect(adapter.text == "中文🙂\nsecond")
+  #expect(cachedAdapter.text == adapter.text)
+  #expect(cachedAdapter.ranges == adapter.ranges)
   #expect(adapter.ranges.first?.range.length == ("中文🙂" as NSString).length)
   let updated = try adapter.applying(
     range: NSRange(location: 0, length: ("中文" as NSString).length), replacement: "日文")

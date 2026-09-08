@@ -90,7 +90,9 @@ struct RecordEditorView: View {
       SynoraEditorRepresentable(
         text: model.editorText(for: record),
         selection: model.editorSelection(for: record),
-        onTextChange: { model.setEditorText($0, for: record) },
+        onTextEdit: { text, range, replacement in
+          model.setEditorText(text, for: record, changeRange: range, replacement: replacement)
+        },
         onSelectionChange: { model.setEditorSelection($0, for: record) },
         onReturn: { model.handleReturn(in: $0, for: record) },
         onBackspace: { model.handleBackspace(in: $0, for: record) }
@@ -120,6 +122,7 @@ struct RecordEditorView: View {
         let blocks = model.mediaBlocks(for: record)
         if !blocks.isEmpty {
           StableRecordMediaStack(
+            recordID: record.id,
             blocks: blocks,
             assets: model.mediaAssets(for: record),
             assetStore: assetStore,
@@ -128,13 +131,16 @@ struct RecordEditorView: View {
               replacingAttachment = true
             },
             onRemove: { blockID, assetID in
-              model.removeAttachment(assetID: assetID, from: blockID, for: record)
+              guard let current = model.currentRecord(id: record.id) else { return }
+              model.removeAttachment(assetID: assetID, from: blockID, for: current)
             },
             onCaptionChange: { blockID, assetID, caption in
-              model.setAssetCaption(caption, assetID: assetID, in: blockID, for: record)
+              guard let current = model.currentRecord(id: record.id) else { return }
+              model.setAssetCaption(caption, assetID: assetID, in: blockID, for: current)
             },
             onLayoutChange: { blockID, layout in
-              model.setMediaLayout(layout, in: blockID, for: record)
+              guard let current = model.currentRecord(id: record.id) else { return }
+              model.setMediaLayout(layout, in: blockID, for: current)
             })
             .equatable()
         }
@@ -390,6 +396,7 @@ struct RecordEditorView: View {
 }
 
 private struct StableRecordMediaStack: View, Equatable {
+  let recordID: UUID
   let blocks: [Block]
   let assets: [UUID: Asset]
   let assetStore: AssetStore
@@ -399,7 +406,8 @@ private struct StableRecordMediaStack: View, Equatable {
   let onLayoutChange: (UUID, MediaLayout) -> Void
 
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-    lhs.blocks == rhs.blocks
+    lhs.recordID == rhs.recordID
+      && lhs.blocks == rhs.blocks
       && lhs.assets == rhs.assets
       && lhs.assetStore.rootURL == rhs.assetStore.rootURL
   }
@@ -531,7 +539,7 @@ private struct AttachmentReplacement: Equatable {
 private struct SynoraEditorRepresentable: NSViewRepresentable {
   let text: String
   let selection: NSRange
-  let onTextChange: @MainActor (String) -> Void
+  let onTextEdit: @MainActor (String, NSRange, String) -> Void
   let onSelectionChange: @MainActor (NSRange) -> Void
   let onReturn: @MainActor (NSRange) -> Bool
   let onBackspace: @MainActor (NSRange) -> Bool
@@ -541,11 +549,24 @@ private struct SynoraEditorRepresentable: NSViewRepresentable {
     let view = SynoraTextView()
     view.string = text
     view.setSelectedRange(selection)
-    view.onTextChange = onTextChange
+    view.onTextEdit = onTextEdit
     view.onSelectionChange = onSelectionChange
     view.onReturn = onReturn
     view.onBackspace = onBackspace
     return view
+  }
+
+  @available(macOS 13.0, *)
+  @MainActor
+  func sizeThatFits(
+    _ proposal: ProposedViewSize,
+    nsView: SynoraTextView,
+    context: Context
+  ) -> CGSize? {
+    // The editor owns scrolling. Do not ask AppKit for the text view's fitting
+    // height: for a long record that measures the entire document during every
+    // SwiftUI layout pass.
+    CGSize(width: proposal.width ?? 1, height: 260)
   }
 
   @MainActor
