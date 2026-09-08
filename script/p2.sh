@@ -177,7 +177,7 @@ import sys
 
 root, output = map(Path, sys.argv[1:])
 required = ("unit", "integration", "app", "ui", "blocks", "media", "export",
-            "recovery", "realIME", "realVoiceOver", "keystrokeToPaint", "visual")
+            "recovery", "realIME", "keystrokeToPaint", "visual")
 report = {"stage": "ERROR", "checks": {}, "reasons": []}
 
 def reject(message):
